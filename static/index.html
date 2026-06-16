@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Dental AI Chatbot</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    #chat { height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .message { margin-bottom: 10px; }
+    .message.user { text-align: right; }
+    .message.bot { text-align: left; }
+    .source { font-size: 0.8em; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Dental AI Chatbot</h1>
+  <div id="chat"></div>
+  <input id="question" type="text" placeholder="Ask a dental question..." style="width: 80%;">
+  <button onclick="send()">Send</button>
+  <script>
+    async function send() {
+      const q = document.getElementById('question').value;
+      if (!q) return;
+      appendMessage('user', q);
+      document.getElementById('question').value = '';
+      const response = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q })
+      });
+      const data = await response.json();
+      appendMessage('bot', data.answer, data.sources);
+    }
+    function appendMessage(role, text, sources = []) {
+      const div = document.getElementById('chat');
+      const msg = document.createElement('div');
+      msg.className = 'message ' + role;
+      msg.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
+      if (sources && sources.length > 0 && role === 'bot') {
+        const src = document.createElement('div');
+        src.className = 'source';
+        src.innerHTML = 'Sources: ' + sources.join(', ');
+        msg.appendChild(src);
+      }
+      div.appendChild(msg);
+      div.scrollTop = div.scrollHeight;
+    }
+  </script>
+</body>
+</html>
