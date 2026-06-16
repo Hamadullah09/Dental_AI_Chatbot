@@ -1,0 +1,68 @@
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.deps import require_admin
+from app.models import Document, User
+from app.schemas import DocumentRead
+from app.services.documents import save_upload
+from app.services.ingestion import IngestionService
+
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/documents", response_model=list[DocumentRead])
+def list_documents(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> list[Document]:
+    return db.query(Document).order_by(Document.created_at.desc()).all()
+
+
+@router.post("/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+def upload_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Document:
+    try:
+        document = save_upload(db, file, current_user)
+        IngestionService().ingest_document(db, document)
+        db.refresh(document)
+        return document
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/documents/{document_id}/reingest", response_model=DocumentRead)
+def reingest_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> Document:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    IngestionService().ingest_document(db, document)
+    db.refresh(document)
+    return document
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> None:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    IngestionService().delete_document_vectors(document.id)
+    storage_path = Path(document.storage_path)
+    db.delete(document)
+    db.commit()
+    if storage_path.exists():
+        storage_path.unlink()

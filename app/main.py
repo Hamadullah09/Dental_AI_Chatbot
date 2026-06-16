@@ -1,45 +1,37 @@
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from pathlib import Path
 
-# Import RAG function from local module
-from rag import get_rag_response
+from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+from app.core.config import get_settings
+from app.core.database import init_db
+from app.routers import admin, auth, chat, health
 
-# Enable CORS for local development
+
+settings = get_settings()
+app = FastAPI(title=settings.app_name, version="1.0.0")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    question: str
+app.include_router(health.router, prefix=settings.api_prefix)
+app.include_router(auth.router, prefix=settings.api_prefix)
+app.include_router(chat.router, prefix=settings.api_prefix)
+app.include_router(admin.router, prefix=settings.api_prefix)
 
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list[str]
+
+@app.on_event("startup")
+def on_startup() -> None:
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    init_db()
+
 
 @app.get("/")
-async def root():
-    """Serve the basic HTML front‑end or a placeholder message."""
+async def root() -> Response:
     index_path = Path(__file__).parent.parent / "static" / "index.html"
-    if index_path.exists():
-        return Response(content=index_path.read_text(), media_type="text/html")
-    return {"message": "Dental AI Chatbot"}
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    """Handle chat requests by retrieving context and generating an answer."""
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
-    try:
-        answer, sources = get_rag_response(req.question)
-        return ChatResponse(answer=answer, sources=sources)
-    except Exception as exc:
-        # Surface the error to the client; in production you should log this
-        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(content=index_path.read_text(encoding="utf-8"), media_type="text/html")

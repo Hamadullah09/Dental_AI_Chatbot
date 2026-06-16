@@ -1,0 +1,47 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://dental:dental_password@postgres:5432/dental_ai
+      QDRANT_URL: http://qdrant:6333
+      UPLOAD_DIR: /app/uploaded_docs
+    volumes:
+      - ./uploaded_docs:/app/uploaded_docs
+      - ./knowledge_base:/app/knowledge_base
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dental_ai
+      POSTGRES_USER: dental
+      POSTGRES_PASSWORD: dental_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dental -d dental_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  postgres_data:
+  qdrant_data:

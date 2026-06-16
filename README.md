@@ -1,102 +1,180 @@
 # Dental AI Chatbot
 
-This repository contains a prototype for a retrieval‑augmented dental chatbot.  It lets dentists, dental students, clinics and hospitals ask questions about oral health and receive answers grounded in authoritative sources such as dental textbooks and clinical guidelines.
+Professional MVP for a Dental AI Retrieval-Augmented Generation chatbot. The app uses FastAPI, PostgreSQL, Qdrant, PDF ingestion, JWT authentication, role-based admin tools, chat history, source citations, and a static frontend.
+
+Dental AI is educational clinical decision support. It does not replace diagnosis, treatment planning, emergency care, or judgment from a licensed dentist.
 
 ## Features
 
-* **Retrieval‑Augmented Generation (RAG)** – queries are embedded and matched against a vector database to provide context to the large language model.
-* **FastAPI backend** – provides a `/chat` endpoint and serves a simple chat UI.
-* **PDF ingestion** – scripts to extract text from PDF documents, split them into overlapping chunks and store them in Qdrant.
-* **Simple frontend** – a browser‑based UI for chatting with the assistant and viewing sources.
-* **Extensible** – designed to be extended with user authentication, document uploads, evaluation tools and multimodal models.
-
-## Setup
-
-1. **Clone the repository**
-
-   ```
-   git clone https://github.com/Hamadullah09/Dental_AI_Chatbot.git
-   cd Dental_AI_Chatbot
-   ```
-
-2. **Install dependencies**
-
-   You can install dependencies using pip.  We recommend using a virtual environment.
-
-   ```
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment variables**
-
-   Create a `.env` file in the project root with the following keys:
-
-   ```
-   QDRANT_URL=http://localhost:6333
-   QDRANT_API_KEY=<your qdrant api key or leave blank if not needed>
-   QDRANT_COLLECTION=dental_docs
-   OPENAI_API_KEY=<your OpenAI API key>
-   ```
-
-   The `OPENAI_API_KEY` is used by `rag.py` to call the OpenAI API.  You may replace this with another provider (e.g. Gemini) by modifying `rag.py`.
-
-4. **Add dental documents**
-
-   Place PDF documents containing dental knowledge in the `knowledge_base/` directory.  These might include textbooks, clinical guidelines, drug databases and protocols.
-
-5. **Ingest documents**
-
-   Run the ingestion script to extract and embed the documents.  This will recreate the Qdrant collection and upload all chunks.
-
-   ```
-   python ingest.py
-   ```
-
-   By default the script uses the `all-MiniLM-L6-v2` model from `sentence-transformers` to generate embeddings.  You can change this in `ingest.py`.
-
-6. **Run the server**
-
-   Start the FastAPI server with uvicorn:
-
-   ```
-   uvicorn app.main:app --reload
-   ```
-
-   Open your browser at `http://127.0.0.1:8000` to use the chat interface.
+- Register and login with JWT authentication.
+- Roles: `admin`, `dentist`, `student`, and `patient`.
+- Admin PDF upload, document list, delete, and re-ingest.
+- PDF parsing with page numbers, chunk indexes, document metadata, and Qdrant point IDs.
+- Qdrant vector retrieval with configurable top-k.
+- RAG answers grounded in retrieved dental context.
+- Citations include document name, page number, chunk index, and score.
+- Chat sessions, messages, document records, chunks, and feedback persisted in SQL.
+- PostgreSQL and Qdrant via Docker Compose.
+- Static MVP UI served by FastAPI.
+- Pytest coverage for auth, chat history, feedback, admin upload, and ingestion metadata.
+- No hard-coded secrets. Use `.env`.
 
 ## Architecture
 
-The high‑level architecture is as follows:
+```mermaid
+flowchart LR
+  UI["Static web UI"] --> API["FastAPI API"]
+  API --> PG["PostgreSQL: users, documents, chunks, chats, feedback"]
+  API --> RAG["RAG service"]
+  API --> ING["PDF ingestion service"]
+  ING --> PDF["Uploaded dental PDFs"]
+  ING --> QD["Qdrant vector store"]
+  RAG --> QD
+  RAG --> LLM["OpenAI or extractive fallback"]
+```
 
-1. User enters a question in the web UI.
-2. The frontend calls the `/chat` endpoint with the question.
-3. The backend embeds the query using `sentence-transformers` and searches the Qdrant collection for the most similar document chunks.
-4. The retrieved chunks are concatenated into a context string and sent to the LLM via the `openai` package.
-5. The LLM generates an answer conditioned on the context.
-6. The backend returns the answer and source metadata to the frontend, which displays them to the user.
+## Quick Start With Docker
 
-The code is organized into three main components:
+1. Copy the environment template.
 
-| Path | Purpose |
-|-----|---------|
-| `app/main.py` | FastAPI app and endpoints |
-| `rag.py` | Embedding, vector search and LLM call |
-| `ingest.py` | Offline ingestion of PDFs into Qdrant |
-| `static/index.html` | Basic chat UI |
-| `knowledge_base/` | Place to store PDF documents |
-| `docs/Remaining_Work.docx` | A high‑level plan for future work |
+```bash
+cp .env.example .env
+```
 
-## Limitations and Next Steps
+2. Edit `.env`.
 
-This project is a starting point.  It does **not** currently provide authentication, chat history, an upload portal, or evaluation metrics.  It also uses a basic embedding model and the OpenAI API.  For production use you should:
+Required for production-like use:
 
-* Add user and admin roles with secure authentication.
-* Implement an upload endpoint to ingest documents from the admin panel.
-* Integrate a relational database for user sessions and message storage.
-* Add evaluation and safety checks using the `llm‑evaluation‑for‑dentistry` toolkit.
-* Expand the front‑end into a proper web application with React or Next.js.
-* Consider using specialized dental models (e.g. DentalGPT, OralGPT) for multimodal queries.
+```bash
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+OPENAI_API_KEY=your-openai-api-key
+```
 
-See `docs/Remaining_Work.docx` for a more detailed list of enhancements.
+For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
+
+3. Start the stack.
+
+```bash
+docker compose up --build
+```
+
+4. Open the app.
+
+```text
+http://localhost:8000
+```
+
+5. Register the first admin.
+
+`.env.example` sets `ALLOW_ADMIN_REGISTRATION=true` for MVP setup. For production, disable public admin registration after creating an admin account.
+
+## Local Python Setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload
+```
+
+For local non-Docker development, set:
+
+```bash
+DATABASE_URL=sqlite:///./dental_ai.db
+QDRANT_URL=http://localhost:6333
+```
+
+## Offline Ingestion
+
+Place PDFs in `knowledge_base/`, make sure Qdrant is running, then run:
+
+```bash
+python ingest.py
+```
+
+The script stores document and chunk metadata in SQL and vectors in Qdrant. Each vector payload includes:
+
+- `text`
+- `document_id`
+- `document_name`
+- `source`
+- `page_number`
+- `chunk_index`
+
+## API Overview
+
+Auth:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+
+Chat:
+
+- `POST /api/chat`
+- `GET /api/chat/sessions`
+- `POST /api/feedback`
+
+Admin:
+
+- `GET /api/admin/documents`
+- `POST /api/admin/documents`
+- `POST /api/admin/documents/{document_id}/reingest`
+- `DELETE /api/admin/documents/{document_id}`
+
+Health:
+
+- `GET /api/health`
+- `GET /api/disclaimer`
+
+## Data Model
+
+- `users`: account, password hash, role, active state.
+- `documents`: uploaded PDFs and ingestion status.
+- `document_chunks`: chunk text, page number, chunk index, Qdrant point ID.
+- `chat_sessions`: user-owned conversations.
+- `messages`: user and assistant turns, assistant citations as JSON.
+- `feedback`: rating and optional comments for assistant messages.
+
+## Tests
+
+```bash
+pytest
+```
+
+Tests mock external RAG and ingestion calls where needed, so they do not require OpenAI or Qdrant.
+
+## Security Notes
+
+- Never commit `.env`.
+- `JWT_SECRET_KEY` must be long and random outside local demos.
+- Passwords are stored with bcrypt hashing.
+- Admin-only routes enforce role checks.
+- Disable `ALLOW_ADMIN_REGISTRATION` after bootstrap.
+- This MVP is not HIPAA-ready. Add compliance controls before handling real patient data.
+
+## Project Structure
+
+```text
+app/
+  core/          configuration, database, security
+  routers/       auth, chat, admin, health APIs
+  services/      RAG, ingestion, upload storage
+  main.py        FastAPI application
+static/          MVP frontend
+tests/           pytest suite
+knowledge_base/  optional offline PDFs
+uploaded_docs/   runtime admin uploads
+docs/            developer notes and roadmap
+```
+
+## Remaining Roadmap
+
+- Alembic migrations instead of `create_all`.
+- Background ingestion jobs with progress events.
+- Rate limiting and audit logs.
+- Better admin dashboard with ingestion failure diagnostics.
+- Evaluation harness for dental factuality and citation quality.
+- PHI redaction, consent flows, retention policies, and deployment hardening.
+- Streaming chat responses.
+- Multi-tenant clinic support.

@@ -1,50 +1,380 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dental AI Chatbot</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    #chat { height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
-    .message { margin-bottom: 10px; }
-    .message.user { text-align: right; }
-    .message.bot { text-align: left; }
-    .source { font-size: 0.8em; color: #666; }
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #667085;
+      --line: #d9e2ec;
+      --brand: #0e7490;
+      --brand-dark: #155e75;
+      --surface: #f8fafc;
+      --ok: #047857;
+      --danger: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #eef6f8;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 22px; margin-bottom: 2px; }
+    h2 { font-size: 16px; margin-bottom: 12px; }
+    button, input, select, textarea {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    button {
+      cursor: pointer;
+      border: 0;
+      background: var(--brand);
+      color: #fff;
+      padding: 10px 14px;
+      font-weight: 700;
+    }
+    button.secondary { background: #e6f4f7; color: var(--brand-dark); }
+    button.danger { background: var(--danger); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    input, select, textarea { width: 100%; padding: 10px 12px; background: #fff; }
+    main {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px;
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    section, aside {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    .stack { display: grid; gap: 10px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .auth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .shell { display: grid; grid-template-rows: auto minmax(420px, 1fr) auto; min-height: calc(100vh - 110px); }
+    #chatLog {
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .message {
+      max-width: 86%;
+      margin-bottom: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .user { margin-left: auto; background: #dff3f7; }
+    .assistant { background: #fff; border: 1px solid var(--line); }
+    .sources { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .source-pill {
+      display: inline-block;
+      margin: 4px 6px 0 0;
+      padding: 4px 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+    .disclaimer {
+      padding: 10px 12px;
+      border: 1px solid #f6d58f;
+      background: #fffbeb;
+      border-radius: 8px;
+      color: #713f12;
+      font-size: 13px;
+    }
+    .hidden { display: none; }
+    .status { min-height: 20px; color: var(--muted); font-size: 13px; }
+    .doc {
+      display: grid;
+      gap: 4px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; padding: 12px; }
+      header { display: grid; gap: 8px; }
+      .auth-grid { grid-template-columns: 1fr; }
+      .message { max-width: 100%; }
+    }
   </style>
 </head>
 <body>
-  <h1>Dental AI Chatbot</h1>
-  <div id="chat"></div>
-  <input id="question" type="text" placeholder="Ask a dental question..." style="width: 80%;">
-  <button onclick="send()">Send</button>
+  <header>
+    <div>
+      <h1>Dental AI Chatbot</h1>
+      <div class="muted">Retrieval-augmented answers with document citations</div>
+    </div>
+    <div id="userBadge" class="muted">Signed out</div>
+  </header>
+
+  <main>
+    <aside class="stack">
+      <section class="stack">
+        <h2>Account</h2>
+        <input id="email" type="email" placeholder="Email">
+        <input id="password" type="password" placeholder="Password">
+        <input id="fullName" type="text" placeholder="Full name">
+        <select id="role">
+          <option value="patient">Patient</option>
+          <option value="student">Student</option>
+          <option value="dentist">Dentist</option>
+          <option value="admin">Admin</option>
+        </select>
+        <div class="auth-grid">
+          <button onclick="register()">Register</button>
+          <button class="secondary" onclick="login()">Login</button>
+        </div>
+        <button class="secondary" onclick="logout()">Logout</button>
+        <div id="authStatus" class="status"></div>
+      </section>
+
+      <section id="adminPanel" class="stack hidden">
+        <h2>Admin Documents</h2>
+        <input id="pdfFile" type="file" accept="application/pdf">
+        <button onclick="uploadPdf()">Upload and ingest PDF</button>
+        <button class="secondary" onclick="loadDocuments()">Refresh documents</button>
+        <div id="documents"></div>
+      </section>
+
+      <section class="stack">
+        <h2>History</h2>
+        <button class="secondary" onclick="newSession()">New chat</button>
+        <button class="secondary" onclick="loadSessions()">Refresh history</button>
+        <div id="sessions" class="stack"></div>
+      </section>
+    </aside>
+
+    <section class="shell">
+      <div class="disclaimer" id="disclaimer">Dental AI is for education and clinical decision support only.</div>
+      <div id="chatLog"></div>
+      <div class="stack" style="margin-top: 12px;">
+        <textarea id="question" rows="3" placeholder="Ask a dental question..."></textarea>
+        <div class="row">
+          <button id="sendButton" onclick="sendQuestion()">Send</button>
+          <button class="secondary" onclick="loadSessions()">Load history</button>
+          <div id="chatStatus" class="status"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
   <script>
-    async function send() {
-      const q = document.getElementById('question').value;
-      if (!q) return;
-      appendMessage('user', q);
-      document.getElementById('question').value = '';
-      const response = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q })
-      });
-      const data = await response.json();
-      appendMessage('bot', data.answer, data.sources);
+    let token = localStorage.getItem("token") || "";
+    let currentUser = JSON.parse(localStorage.getItem("user") || "null");
+    let sessionId = null;
+    let lastAssistantMessageId = null;
+
+    const api = async (path, options = {}) => {
+      const headers = options.headers || {};
+      if (!(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(`/api${path}`, { ...options, headers });
+      const data = response.status === 204 ? null : await response.json();
+      if (!response.ok) throw new Error(data?.detail || "Request failed");
+      return data;
+    };
+
+    function updateUserBadge() {
+      const badge = document.getElementById("userBadge");
+      badge.textContent = currentUser ? `${currentUser.email} (${currentUser.role})` : "Signed out";
+      document.getElementById("adminPanel").classList.toggle("hidden", currentUser?.role !== "admin");
     }
-    function appendMessage(role, text, sources = []) {
-      const div = document.getElementById('chat');
-      const msg = document.createElement('div');
-      msg.className = 'message ' + role;
-      msg.innerHTML = '<p>' + text.replace(/\n/g, '<br>') + '</p>';
-      if (sources && sources.length > 0 && role === 'bot') {
-        const src = document.createElement('div');
-        src.className = 'source';
-        src.innerHTML = 'Sources: ' + sources.join(', ');
-        msg.appendChild(src);
+
+    function setStatus(id, text) { document.getElementById(id).textContent = text || ""; }
+
+    async function register() {
+      try {
+        const payload = {
+          email: email.value,
+          password: password.value,
+          full_name: fullName.value,
+          role: role.value,
+        };
+        const data = await api("/auth/register", { method: "POST", body: JSON.stringify(payload) });
+        saveAuth(data);
+        setStatus("authStatus", "Registered and signed in.");
+      } catch (err) { setStatus("authStatus", err.message); }
+    }
+
+    async function login() {
+      try {
+        const data = await api("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email: email.value, password: password.value }),
+        });
+        saveAuth(data);
+        setStatus("authStatus", "Signed in.");
+      } catch (err) { setStatus("authStatus", err.message); }
+    }
+
+    function saveAuth(data) {
+      token = data.access_token;
+      currentUser = data.user;
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(currentUser));
+      updateUserBadge();
+      loadSessions();
+      if (currentUser.role === "admin") loadDocuments();
+    }
+
+    function logout() {
+      token = "";
+      currentUser = null;
+      sessionId = null;
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      updateUserBadge();
+      chatLog.innerHTML = "";
+      setStatus("authStatus", "Signed out.");
+    }
+
+    function newSession() {
+      sessionId = null;
+      lastAssistantMessageId = null;
+      chatLog.innerHTML = "";
+    }
+
+    function appendMessage(role, text, sources = [], messageId = null) {
+      const div = document.createElement("div");
+      div.className = `message ${role}`;
+      div.textContent = text;
+      if (role === "assistant" && sources.length) {
+        const sourceBox = document.createElement("div");
+        sourceBox.className = "sources";
+        sourceBox.textContent = "Sources";
+        sources.forEach(source => {
+          const pill = document.createElement("span");
+          pill.className = "source-pill";
+          pill.textContent = `${source.document_name}${source.page_number ? ` p.${source.page_number}` : ""}`;
+          sourceBox.appendChild(pill);
+        });
+        div.appendChild(sourceBox);
+        const feedback = document.createElement("div");
+        feedback.className = "row";
+        feedback.style.marginTop = "8px";
+        feedback.innerHTML = `<button class="secondary" onclick="sendFeedback('${messageId}', 5)">Helpful</button><button class="secondary" onclick="sendFeedback('${messageId}', 1)">Needs work</button>`;
+        div.appendChild(feedback);
       }
-      div.appendChild(msg);
-      div.scrollTop = div.scrollHeight;
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
     }
+
+    async function sendQuestion() {
+      if (!token) return setStatus("chatStatus", "Please login first.");
+      const q = question.value.trim();
+      if (!q) return;
+      appendMessage("user", q);
+      question.value = "";
+      sendButton.disabled = true;
+      setStatus("chatStatus", "Retrieving dental context...");
+      try {
+        const data = await api("/chat", {
+          method: "POST",
+          body: JSON.stringify({ question: q, session_id: sessionId }),
+        });
+        sessionId = data.session_id;
+        lastAssistantMessageId = data.message_id;
+        disclaimer.textContent = data.disclaimer;
+        appendMessage("assistant", data.answer, data.sources, data.message_id);
+        setStatus("chatStatus", "");
+      } catch (err) { setStatus("chatStatus", err.message); }
+      finally { sendButton.disabled = false; }
+    }
+
+    async function sendFeedback(messageId, rating) {
+      if (!messageId) return;
+      try {
+        await api("/feedback", { method: "POST", body: JSON.stringify({ message_id: messageId, rating }) });
+        setStatus("chatStatus", "Feedback saved.");
+      } catch (err) { setStatus("chatStatus", err.message); }
+    }
+
+    async function loadSessions() {
+      if (!token) return;
+      try {
+        const data = await api("/chat/sessions");
+        sessions.innerHTML = "";
+        data.forEach(session => {
+          const item = document.createElement("button");
+          item.className = "secondary";
+          item.textContent = session.title || "Untitled chat";
+          item.onclick = () => {
+            sessionId = session.id;
+            chatLog.innerHTML = "";
+            session.messages.forEach(m => appendMessage(m.role, m.content, m.sources, m.id));
+          };
+          sessions.appendChild(item);
+        });
+      } catch (err) { setStatus("chatStatus", err.message); }
+    }
+
+    async function uploadPdf() {
+      const file = pdfFile.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("file", file);
+      setStatus("authStatus", "Uploading and ingesting...");
+      try {
+        await api("/admin/documents", { method: "POST", body: formData });
+        setStatus("authStatus", "Document ingested.");
+        loadDocuments();
+      } catch (err) { setStatus("authStatus", err.message); }
+    }
+
+    async function loadDocuments() {
+      if (currentUser?.role !== "admin") return;
+      try {
+        const data = await api("/admin/documents");
+        documents.innerHTML = "";
+        data.forEach(doc => {
+          const item = document.createElement("div");
+          item.className = "doc";
+          item.innerHTML = `<strong>${doc.original_filename}</strong><span>${doc.status} · ${doc.chunk_count} chunks</span><span>${doc.error_message || ""}</span>`;
+          const actions = document.createElement("div");
+          actions.className = "row";
+          actions.innerHTML = `<button class="secondary" onclick="reingest('${doc.id}')">Re-ingest</button><button class="danger" onclick="deleteDocument('${doc.id}')">Delete</button>`;
+          item.appendChild(actions);
+          documents.appendChild(item);
+        });
+      } catch (err) { setStatus("authStatus", err.message); }
+    }
+
+    async function reingest(id) {
+      await api(`/admin/documents/${id}/reingest`, { method: "POST" });
+      loadDocuments();
+    }
+
+    async function deleteDocument(id) {
+      await api(`/admin/documents/${id}`, { method: "DELETE" });
+      loadDocuments();
+    }
+
+    updateUserBadge();
+    fetch("/api/disclaimer").then(r => r.json()).then(data => disclaimer.textContent = data.disclaimer);
   </script>
 </body>
 </html>
