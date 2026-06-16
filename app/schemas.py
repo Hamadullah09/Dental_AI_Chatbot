@@ -10,7 +10,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     full_name: str | None = None
-    role: UserRole = UserRole.patient
+    role: UserRole = Field(default=UserRole.patient, description="Public registration supports patient, student, and dentist roles.")
 
 
 class UserRead(BaseModel):

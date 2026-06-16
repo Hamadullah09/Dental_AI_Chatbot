@@ -1,6 +1,6 @@
 # Dental AI Chatbot
 
-Professional MVP for a Dental AI Retrieval-Augmented Generation chatbot. The app uses FastAPI, PostgreSQL, Qdrant, PDF ingestion, JWT authentication, role-based admin tools, chat history, source citations, and a static frontend.
+Professional MVP for a Dental AI Retrieval-Augmented Generation chatbot. The app uses FastAPI, PostgreSQL, Qdrant, PDF ingestion, JWT authentication, role-based admin tools, chat history, source citations, and a professional React/Next.js frontend with light and dark themes.
 
 Dental AI is educational clinical decision support. It does not replace diagnosis, treatment planning, emergency care, or judgment from a licensed dentist.
 
@@ -15,7 +15,8 @@ Dental AI is educational clinical decision support. It does not replace diagnosi
 - Citations include document name, page number, chunk index, and score.
 - Chat sessions, messages, document records, chunks, and feedback persisted in SQL.
 - PostgreSQL and Qdrant via Docker Compose.
-- Static MVP UI served by FastAPI.
+- React/Next.js frontend with separate pages for sign in, registration, chat, history, and admin document management.
+- ChatGPT-style chat workspace with persistent light/dark theme.
 - Pytest coverage for auth, chat history, feedback, admin upload, and ingestion metadata.
 - No hard-coded secrets. Use `.env`.
 
@@ -23,7 +24,7 @@ Dental AI is educational clinical decision support. It does not replace diagnosi
 
 ```mermaid
 flowchart LR
-  UI["Static web UI"] --> API["FastAPI API"]
+  UI["Next.js React UI"] --> API["FastAPI API"]
   API --> PG["PostgreSQL: users, documents, chunks, chats, feedback"]
   API --> RAG["RAG service"]
   API --> ING["PDF ingestion service"]
@@ -50,6 +51,14 @@ JWT_SECRET_KEY=replace-with-a-long-random-secret
 OPENAI_API_KEY=your-openai-api-key
 ```
 
+`JWT_SECRET_KEY` is not provided by OpenAI, Qdrant, or PostgreSQL. It is your own private random signing secret used by the backend to create and verify login tokens. Generate one locally:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Keep this value only in `.env`. Never commit it to GitHub.
+
 For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
 
 3. Start the stack.
@@ -61,14 +70,22 @@ docker compose up --build
 4. Open the app.
 
 ```text
+http://localhost:3000
+```
+
+5. Sign in as the configured admin.
+
+Admin users are not created through public registration. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`; the backend seeds that admin account into the database on startup.
+
+The FastAPI backend is still available at:
+
+```text
 http://localhost:8000
 ```
 
-5. Register the first admin.
+## Local Development Setup
 
-`.env.example` sets `ALLOW_ADMIN_REGISTRATION=true` for MVP setup. For production, disable public admin registration after creating an admin account.
-
-## Local Python Setup
+Run the backend:
 
 ```bash
 python -m venv .venv
@@ -83,6 +100,20 @@ For local non-Docker development, set:
 ```bash
 DATABASE_URL=sqlite:///./dental_ai.db
 QDRANT_URL=http://localhost:6333
+```
+
+Run the frontend in another terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
 ```
 
 ## Offline Ingestion
@@ -151,6 +182,7 @@ Tests mock external RAG and ingestion calls where needed, so they do not require
 - Passwords are stored with bcrypt hashing.
 - Admin-only routes enforce role checks.
 - Disable `ALLOW_ADMIN_REGISTRATION` after bootstrap.
+- Do not expose admin registration in the public UI. Use `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to seed the admin account.
 - This MVP is not HIPAA-ready. Add compliance controls before handling real patient data.
 
 ## Project Structure
@@ -161,7 +193,8 @@ app/
   routers/       auth, chat, admin, health APIs
   services/      RAG, ingestion, upload storage
   main.py        FastAPI application
-static/          MVP frontend
+frontend/        React/Next.js frontend
+static/          legacy FastAPI-served fallback page
 tests/           pytest suite
 knowledge_base/  optional offline PDFs
 uploaded_docs/   runtime admin uploads

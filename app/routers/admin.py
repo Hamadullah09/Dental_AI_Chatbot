@@ -35,6 +35,8 @@ def upload_document(
         return document
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {exc}")
 
 
 @router.post("/documents/{document_id}/reingest", response_model=DocumentRead)
@@ -46,9 +48,12 @@ def reingest_document(
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    IngestionService().ingest_document(db, document)
-    db.refresh(document)
-    return document
+    try:
+        IngestionService().ingest_document(db, document)
+        db.refresh(document)
+        return document
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Document re-ingest failed: {exc}")
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -60,7 +65,10 @@ def delete_document(
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    IngestionService().delete_document_vectors(document.id)
+    try:
+        IngestionService().delete_document_vectors(document.id)
+    except Exception:
+        pass
     storage_path = Path(document.storage_path)
     db.delete(document)
     db.commit()
