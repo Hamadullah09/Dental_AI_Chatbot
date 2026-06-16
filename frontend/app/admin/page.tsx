@@ -31,12 +31,13 @@ export default function AdminPage() {
   async function onUpload() {
     if (!token || !file) return;
     setIsUploading(true);
-    setStatus("Uploading and ingesting PDF...");
+    setStatus("Uploading PDF...");
     try {
       await uploadDocument(file, token);
       setFile(null);
-      setStatus("Document uploaded and ingested.");
+      setStatus("Upload accepted. Ingestion is running in the background.");
       await loadDocuments();
+      pollDocuments();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload failed");
     } finally {
@@ -46,14 +47,26 @@ export default function AdminPage() {
 
   async function onReingest(documentId: string) {
     if (!token) return;
-    setStatus("Re-ingesting document...");
+    setStatus("Re-ingest started. This may take a few minutes for large PDFs.");
     try {
       await reingestDocument(documentId, token);
       await loadDocuments();
-      setStatus("Document re-ingested.");
+      pollDocuments();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Re-ingest failed");
     }
+  }
+
+  function pollDocuments() {
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      await loadDocuments();
+      if (attempts >= 20) {
+        window.clearInterval(timer);
+        setStatus("Refresh documents to check final ingestion status.");
+      }
+    }, 3000);
   }
 
   async function onDelete(documentId: string) {

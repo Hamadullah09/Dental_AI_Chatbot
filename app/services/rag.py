@@ -103,6 +103,10 @@ class RAGService:
         return response.choices[0].message.content.strip()
 
     def answer(self, question: str, top_k: int | None = None) -> tuple[str, list[SourceCitation]]:
+        conversational_answer = answer_conversational_prompt(question)
+        if conversational_answer:
+            return conversational_answer, []
+
         chunks = self.retrieve(question, top_k=top_k)
         answer = self.generate_answer(question, chunks)
         citations = dedupe_citations([chunk.citation for chunk in chunks])
@@ -147,6 +151,49 @@ def split_sentences(text: str) -> list[str]:
     cleaned = " ".join(text.split())
     parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", cleaned)
     return [part.strip() for part in parts if len(part.strip()) > 25]
+
+
+def answer_conversational_prompt(question: str) -> str | None:
+    normalized = re.sub(r"[^a-zA-Z0-9\s?]", " ", question.lower()).strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+
+    greetings = {
+        "hi", "hello", "hey", "hy", "salam", "assalam o alaikum",
+        "assalamualaikum", "aoa", "good morning", "good evening",
+    }
+    if normalized in greetings:
+        return (
+            "Hi, I am Dental AI. I can help answer dental questions using the PDFs uploaded by the admin. "
+            "You can ask about oral diseases, tooth decay, gum disease, prevention, symptoms, or dental care guidance."
+        )
+
+    if normalized in {"who are you", "what are you", "ap kon ho", "tum kon ho"}:
+        return (
+            "I am Dental AI, a retrieval-based dental assistant. I use uploaded dental reference PDFs to give grounded, cited answers. "
+            "I can support learning and general dental guidance, but I do not replace a licensed dentist."
+        )
+
+    if any(phrase in normalized for phrase in ["what can you do", "help me", "how can you help", "kia kar sakte"]):
+        return (
+            "I can help with dental topics such as oral diseases, dental caries, periodontal disease, oral hygiene, prevention, "
+            "and questions from uploaded dental guidelines. Ask a specific question like: 'What are symptoms of periodontal disease?'"
+        )
+
+    symptom_terms = ["pain", "dard", "bleeding", "swelling", "soojan", "toothache", "sensitivity", "infection"]
+    personal_terms = ["my", "meri", "mera", "mujhe", "mere", "i have", "i feel"]
+    if any(term in normalized for term in symptom_terms) and any(term in normalized for term in personal_terms):
+        return (
+            "I can give general dental guidance, but I cannot diagnose you personally online. "
+            "Please tell me: where is the problem, how long it has been happening, pain level, swelling/fever, bleeding, "
+            "and whether there was injury or recent dental treatment. If you have facial swelling, fever, pus, trouble swallowing, "
+            "or severe pain, contact a dentist or emergency service urgently."
+        )
+
+    small_talk = {"thanks", "thank you", "ok", "okay", "shukriya", "jazakallah"}
+    if normalized in small_talk:
+        return "You are welcome. Ask me any dental question when you are ready."
+
+    return None
 
 
 def question_keywords(question: str) -> set[str]:
