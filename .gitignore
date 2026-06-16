@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+dental_ai.db
+uploaded_docs/*
+!uploaded_docs/.gitkeep
