@@ -19,7 +19,7 @@ def test_chat_saves_history_and_sources(client, monkeypatch):
     auth = register_user(client, "student@example.com", "student")
 
     class FakeRAGService:
-        def answer(self, question, top_k=None):
+        def answer(self, question, top_k=None, filters=None):
             return (
                 "Brush twice daily with fluoride toothpaste.",
                 [

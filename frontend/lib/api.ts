@@ -73,9 +73,27 @@ export function getDocuments(token: string) {
   return request<DocumentItem[]>("/admin/documents", { token });
 }
 
-export function uploadDocument(file: File, token: string) {
+export type UploadDocumentMetadata = {
+  book_title?: string;
+  author_or_source?: string;
+  year?: string;
+  edition?: string;
+  document_type?: string;
+  trust_level?: string;
+  specialty?: string;
+  language?: string;
+  review_status?: string;
+};
+
+export function uploadDocument(file: File, token: string, metadata: UploadDocumentMetadata = {}) {
   const form = new FormData();
   form.append("file", file);
+  Object.entries(metadata).forEach(([key, value]) => {
+    const trimmed = String(value || "").trim();
+    if (trimmed) {
+      form.append(key, trimmed);
+    }
+  });
   return request<DocumentItem>("/admin/documents", {
     method: "POST",
     token,

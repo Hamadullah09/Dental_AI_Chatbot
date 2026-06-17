@@ -1,0 +1,3 @@
+{"question":"What is tooth decay?","expected_terms":["caries","biofilm"],"expected_sources":[],"filters":{"review_status":"approved","trust_levels":["high","medium"],"document_types":["guideline","textbook","patient_education"]}}
+{"question":"List oral diseases.","expected_terms":["caries","periodontal"],"expected_sources":[],"filters":{"review_status":"approved","trust_levels":["high","medium"],"document_types":["guideline","textbook","patient_education"]}}
+{"question":"What is ICDAS code 1?","expected_terms":["code 1","enamel"],"expected_sources":[],"filters":{"review_status":"approved","trust_levels":["high","medium"],"document_types":["guideline","textbook","research_article"]}}

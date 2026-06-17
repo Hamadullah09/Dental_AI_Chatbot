@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
 from app.deps import require_admin
-from app.models import Document, DocumentStatus, User
+from app.models import Document, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
 from app.schemas import DocumentRead
 from app.services.documents import save_upload
 from app.services.ingestion import IngestionService
@@ -38,11 +38,33 @@ def list_documents(
 def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    book_title: str | None = Form(None),
+    author_or_source: str | None = Form(None),
+    year: int | None = Form(None),
+    edition: str | None = Form(None),
+    document_type: DocumentType = Form(DocumentType.textbook),
+    trust_level: TrustLevel = Form(TrustLevel.high),
+    specialty: str | None = Form(None),
+    language: str | None = Form("English"),
+    review_status: ReviewStatus = Form(ReviewStatus.approved),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ) -> Document:
     try:
-        document = save_upload(db, file, current_user)
+        document = save_upload(
+            db,
+            file,
+            current_user,
+            book_title=book_title,
+            author_or_source=author_or_source,
+            year=year,
+            edition=edition,
+            document_type=document_type,
+            trust_level=trust_level,
+            specialty=specialty,
+            language=language,
+            review_status=review_status,
+        )
         document.status = DocumentStatus.processing
         db.commit()
         db.refresh(document)

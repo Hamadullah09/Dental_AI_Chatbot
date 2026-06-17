@@ -26,6 +26,27 @@ class DocumentStatus(str, enum.Enum):
     failed = "failed"
 
 
+class DocumentType(str, enum.Enum):
+    guideline = "guideline"
+    textbook = "textbook"
+    patient_education = "patient_education"
+    research_article = "research_article"
+    other = "other"
+
+
+class TrustLevel(str, enum.Enum):
+    high = "high"
+    medium = "medium"
+    low = "low"
+
+
+class ReviewStatus(str, enum.Enum):
+    unreviewed = "unreviewed"
+    reviewed = "reviewed"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class MessageRole(str, enum.Enum):
     user = "user"
     assistant = "assistant"
@@ -55,6 +76,16 @@ class Document(Base):
     content_type: Mapped[str | None] = mapped_column(String(255))
     storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     status: Mapped[DocumentStatus] = mapped_column(Enum(DocumentStatus), default=DocumentStatus.uploaded)
+    title: Mapped[str | None] = mapped_column(String(500))
+    author_or_source: Mapped[str | None] = mapped_column(String(500))
+    edition: Mapped[str | None] = mapped_column(String(255))
+    publication_year: Mapped[int | None] = mapped_column(Integer)
+    document_type: Mapped[DocumentType] = mapped_column(Enum(DocumentType), default=DocumentType.textbook)
+    trust_level: Mapped[TrustLevel] = mapped_column(Enum(TrustLevel), default=TrustLevel.high)
+    review_status: Mapped[ReviewStatus] = mapped_column(Enum(ReviewStatus), default=ReviewStatus.approved)
+    specialty: Mapped[str | None] = mapped_column(String(255))
+    language: Mapped[str | None] = mapped_column(String(100))
+    file_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
     uploaded_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

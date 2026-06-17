@@ -50,6 +50,16 @@ export type DocumentItem = {
   id: string;
   filename: string;
   original_filename: string;
+  title: string | null;
+  author_or_source: string | null;
+  edition: string | null;
+  publication_year: number | null;
+  document_type: "guideline" | "textbook" | "patient_education" | "research_article" | "other";
+  trust_level: "high" | "medium" | "low";
+  review_status: "unreviewed" | "reviewed" | "approved" | "rejected";
+  specialty: string | null;
+  language: string | null;
+  file_hash: string | null;
   status: "uploaded" | "processing" | "ready" | "failed";
   chunk_count: number;
   error_message: string | null;

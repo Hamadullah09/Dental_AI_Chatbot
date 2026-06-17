@@ -12,9 +12,9 @@ The MVP now includes FastAPI services, JWT auth, roles, PostgreSQL-ready models,
 
 ## RAG Quality
 
-- Add hybrid retrieval and reranking.
+- Expand the new RAG evaluation dataset with more expert-reviewed dental questions.
 - Add citation verification tests that require every clinical claim to map to a retrieved source.
-- Add evaluation datasets for common dental questions.
+- Add human review labels for faithfulness, safety, and citation correctness.
 - Add safety classifiers for emergency, medication, pediatric, pregnancy, and post-operative scenarios.
 
 ## Frontend

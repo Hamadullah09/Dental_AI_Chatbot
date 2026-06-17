@@ -10,7 +10,7 @@ Dental AI is educational clinical decision support. It does not replace diagnosi
 - Roles: `admin`, `dentist`, `student`, and `patient`.
 - Admin PDF upload, document list, delete, and re-ingest.
 - PDF parsing with page numbers, chunk indexes, document metadata, and Qdrant point IDs.
-- Qdrant vector retrieval with configurable top-k.
+- Qdrant vector retrieval with configurable top-k, metadata filtering, hybrid keyword/vector retrieval, reranking, and context compression.
 - RAG answers grounded in retrieved dental context.
 - Citations include document name, page number, chunk index, and score.
 - Chat sessions, messages, document records, chunks, and feedback persisted in SQL.
@@ -129,9 +129,48 @@ The script stores document and chunk metadata in SQL and vectors in Qdrant. Each
 - `text`
 - `document_id`
 - `document_name`
+- `book_title`
+- `author_or_source`
+- `year`
+- `edition`
+- `document_type`
+- `trust_level`
+- `review_status`
+- `specialty`
+- `language`
+- `file_hash`
 - `source`
 - `page_number`
 - `chunk_index`
+
+## RAG Quality Evaluation
+
+Phase 2 includes a lightweight evaluation harness for retrieval and answer quality. Add or edit JSONL cases in:
+
+```text
+docs/evaluation_dataset.jsonl
+```
+
+Each case can define:
+
+- `question`
+- `expected_terms`
+- `expected_sources`
+- `filters`
+
+Run:
+
+```bash
+python scripts/evaluate_rag.py --dataset docs/evaluation_dataset.jsonl
+```
+
+For machine-readable output:
+
+```bash
+python scripts/evaluate_rag.py --json
+```
+
+The evaluator reports pass rate, expected-term recall, citation rate, and source match rate. Use this after uploading approved dental PDFs to compare retrieval changes.
 
 ## API Overview
 
@@ -207,7 +246,7 @@ docs/            developer notes and roadmap
 - Background ingestion jobs with progress events.
 - Rate limiting and audit logs.
 - Better admin dashboard with ingestion failure diagnostics.
-- Evaluation harness for dental factuality and citation quality.
+- Larger expert-reviewed evaluation dataset for dental factuality and citation quality.
 - PHI redaction, consent flows, retention policies, and deployment hardening.
 - Streaming chat responses.
 - Multi-tenant clinic support.

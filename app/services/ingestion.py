@@ -1,3 +1,4 @@
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,10 +53,10 @@ class IngestionService:
         chunk_index = 0
         for page_index, page in enumerate(reader.pages, start=1):
             try:
-                page_text = page.extract_text() or ""
+                raw_text = page.extract_text() or ""
             except Exception:
-                page_text = ""
-            page_text = " ".join(page_text.split())
+                raw_text = ""
+            page_text = clean_pdf_text(raw_text)
             if not page_text:
                 continue
             for chunk_text in split_text(page_text, self.settings.chunk_size, self.settings.chunk_overlap):
@@ -104,6 +105,17 @@ class IngestionService:
                     "text": chunk.text,
                     "document_id": document.id,
                     "document_name": document.original_filename,
+                    "book_title": document.title or document.original_filename,
+                    "title": document.title or document.original_filename,
+                    "author_or_source": document.author_or_source,
+                    "edition": document.edition,
+                    "year": document.publication_year,
+                    "document_type": document.document_type.value,
+                    "trust_level": document.trust_level.value,
+                    "review_status": document.review_status.value,
+                    "specialty": document.specialty,
+                    "language": document.language,
+                    "file_hash": document.file_hash,
                     "source": document.original_filename,
                     "page_number": chunk.page_number,
                     "chunk_index": chunk.chunk_index,
@@ -130,6 +142,18 @@ class IngestionService:
             document.error_message = str(exc)
             db.commit()
             raise
+
+
+def clean_pdf_text(raw_text: str) -> str:
+    text = raw_text.replace("\x00", " ")
+    text = re.sub(r"\bBM\.indd\b.*?(?=\s|$)", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bPlate\s+[A-Za-z0-9.-]+\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<=\w)-\s+(?=\w)", "", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    return " ".join(text.split())
 
 
 def split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

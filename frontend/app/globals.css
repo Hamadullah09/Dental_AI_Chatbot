@@ -196,7 +196,8 @@ button {
   gap: 6px;
 }
 
-.field label {
+.field label,
+.field span {
   color: var(--muted);
   font-size: 13px;
 }
@@ -384,6 +385,10 @@ html[data-theme="dark"] .icon-button {
   gap: 16px;
 }
 
+.grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .two-column {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -461,6 +466,7 @@ html[data-theme="dark"] .icon-button {
     display: none;
   }
 
+  .grid.two,
   .two-column {
     grid-template-columns: 1fr;
   }
