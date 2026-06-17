@@ -4,6 +4,20 @@ type ApiOptions = RequestInit & {
   token?: string | null;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isInvalidTokenError(error: unknown) {
+  return error instanceof ApiError && error.status === 401;
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
@@ -25,7 +39,7 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
       ? await response.json()
       : await response.text();
   if (!response.ok) {
-    throw new Error(typeof data === "string" ? data : data?.detail || "Request failed");
+    throw new ApiError(typeof data === "string" ? data : data?.detail || "Request failed", response.status);
   }
   return data as T;
 }

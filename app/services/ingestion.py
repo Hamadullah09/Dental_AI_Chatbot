@@ -1,6 +1,7 @@
 import re
 import uuid
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Document, DocumentChunk, DocumentStatus
+from app.services.chunk_quality import assess_chunk_quality
 from app.services.embeddings import get_embedding_model
 from app.services.vector_store import get_qdrant_client
 
@@ -101,7 +103,9 @@ class IngestionService:
 
             for chunk, vector in zip(chunks, vectors):
                 point_id = str(uuid.uuid4())
+                quality = assess_chunk_quality(chunk.text)
                 payload = {
+                    "chunk_id": point_id,
                     "text": chunk.text,
                     "document_id": document.id,
                     "document_name": document.original_filename,
@@ -119,6 +123,9 @@ class IngestionService:
                     "source": document.original_filename,
                     "page_number": chunk.page_number,
                     "chunk_index": chunk.chunk_index,
+                    "quality_score": quality.quality_score,
+                    "is_noisy": quality.is_noisy,
+                    "noise_reasons": quality.noise_reasons,
                 }
                 points.append(qmodels.PointStruct(id=point_id, vector=vector.tolist(), payload=payload))
                 db.add(
@@ -129,6 +136,9 @@ class IngestionService:
                         page_number=chunk.page_number,
                         text=chunk.text,
                         token_estimate=max(1, len(chunk.text.split())),
+                        quality_score=quality.quality_score,
+                        is_noisy=quality.is_noisy,
+                        noise_reasons=json.dumps(quality.noise_reasons),
                     )
                 )
 
@@ -146,14 +156,39 @@ class IngestionService:
 
 def clean_pdf_text(raw_text: str) -> str:
     text = raw_text.replace("\x00", " ")
+    text = re.sub(r"/H17040|H17040", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bBM\.indd\b.*?(?=\s|$)", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bPlate\s+[A-Za-z0-9.-]+\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"(?<=\w)-\s+(?=\w)", "", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    text = "\n".join(clean_pdf_line(line) for line in text.splitlines())
+    text = "\n".join(line for line in text.splitlines() if line.strip())
     return " ".join(text.split())
+
+
+def clean_pdf_line(line: str) -> str:
+    stripped = line.strip()
+    lower = stripped.lower()
+    if not stripped:
+        return ""
+    noisy_phrases = [
+        "put a tick",
+        "put a cross",
+        "tick/cross",
+        "how often do you clean your teeth",
+        "never fairly often very often",
+        "don't know",
+        "don’t know",
+    ]
+    if any(phrase in lower for phrase in noisy_phrases):
+        return ""
+    if re.fullmatch(r"[\W\d_]{4,}", stripped):
+        return ""
+    if len(stripped) < 4 and not re.search(r"[a-zA-Z]{3,}", stripped):
+        return ""
+    return stripped
 
 
 def split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

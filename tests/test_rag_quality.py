@@ -1,7 +1,8 @@
 from app.schemas import SourceCitation
+from app.services.chunk_quality import assess_chunk_quality
 from app.services.evaluation import EvaluationCase, evaluate_cases, summarize_results
 from app.services.ingestion import clean_pdf_text
-from app.services.rag import RetrievedChunk, build_qdrant_filter, keyword_score, rerank_chunks
+from app.services.rag import RetrievedChunk, build_qdrant_filter, keyword_score, rerank_chunks, should_use_chunk
 
 
 def test_clean_pdf_text_removes_artifacts_and_repairs_words():
@@ -10,6 +11,29 @@ def test_clean_pdf_text_removes_artifacts_and_repairs_words():
     assert "BM.indd" not in text
     assert "Plate" not in text
     assert "caries" in text
+
+
+def test_chunk_quality_detects_h17040_questionnaire_noise():
+    quality = assess_chunk_quality(
+        "/H17040 Put a tick/cross. How often do you clean your teeth? "
+        "Never Fairly often Very often Sometimes Don't know."
+    )
+
+    assert quality.is_noisy
+    assert quality.quality_score < 0.6
+    assert "who_form_artifact_h17040" in quality.noise_reasons
+    assert "questionnaire_scale_options" in quality.noise_reasons
+
+
+def test_normal_retrieval_rejects_noisy_questionnaire_chunk():
+    noisy = RetrievedChunk(
+        text="/H17040 Put a tick/cross. Never Fairly often Very often Sometimes Don't know.",
+        citation=SourceCitation(document_name="WHO Survey", page_number=122, chunk_index=4),
+        metadata={"is_noisy": True, "quality_score": 0.2, "noise_reasons": ["questionnaire_or_form_text"]},
+    )
+
+    assert not should_use_chunk("what you know about oral medicines", noisy)
+    assert should_use_chunk("what does the oral health survey form ask?", noisy, allow_noisy=True)
 
 
 def test_metadata_filter_builds_trusted_approved_constraints():

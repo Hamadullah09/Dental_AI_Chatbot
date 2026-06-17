@@ -40,8 +40,8 @@ def ensure_lightweight_columns() -> None:
     inspector = inspect(engine)
     if "documents" not in inspector.get_table_names():
         return
-    existing = {column["name"] for column in inspector.get_columns("documents")}
-    additions = {
+    document_columns = {column["name"] for column in inspector.get_columns("documents")}
+    document_additions = {
         "title": "VARCHAR(500)",
         "author_or_source": "VARCHAR(500)",
         "edition": "VARCHAR(255)",
@@ -53,9 +53,18 @@ def ensure_lightweight_columns() -> None:
         "language": "VARCHAR(100)",
         "file_hash": "VARCHAR(64)",
     }
+    chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")} if "document_chunks" in inspector.get_table_names() else set()
+    chunk_additions = {
+        "quality_score": "FLOAT DEFAULT 1.0 NOT NULL",
+        "is_noisy": "BOOLEAN DEFAULT 0 NOT NULL",
+        "noise_reasons": "TEXT",
+    }
     with engine.begin() as connection:
-        for name, ddl_type in additions.items():
-            if name not in existing:
+        for name, ddl_type in document_additions.items():
+            if name not in document_columns:
                 connection.execute(text(f"ALTER TABLE documents ADD COLUMN {name} {ddl_type}"))
+        for name, ddl_type in chunk_additions.items():
+            if name not in chunk_columns:
+                connection.execute(text(f"ALTER TABLE document_chunks ADD COLUMN {name} {ddl_type}"))
         connection.execute(text("UPDATE documents SET title = original_filename WHERE title IS NULL OR title = ''"))
         connection.execute(text("UPDATE documents SET language = 'English' WHERE language IS NULL OR language = ''"))

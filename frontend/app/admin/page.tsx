@@ -2,14 +2,16 @@
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { FileUp, RefreshCw, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
-import { deleteDocument, getDocuments, reingestDocument, uploadDocument } from "@/lib/api";
+import { deleteDocument, getDocuments, isInvalidTokenError, reingestDocument, uploadDocument } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { DocumentItem } from "@/lib/types";
 
 export default function AdminPage() {
-  const { token } = useAuth();
+  const router = useRouter();
+  const { token, logout } = useAuth();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [bookTitle, setBookTitle] = useState("");
@@ -24,14 +26,23 @@ export default function AdminPage() {
   const [status, setStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
 
+  const handleError = useCallback((error: unknown, fallback: string) => {
+    if (isInvalidTokenError(error)) {
+      logout();
+      router.replace("/login");
+      return "Your login session expired. Please sign in again.";
+    }
+    return error instanceof Error ? error.message : fallback;
+  }, [logout, router]);
+
   const loadDocuments = useCallback(async () => {
     if (!token) return;
     try {
       setDocuments(await getDocuments(token));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not load documents");
+      setStatus(handleError(error, "Could not load documents"));
     }
-  }, [token]);
+  }, [handleError, token]);
 
   useEffect(() => {
     loadDocuments();
@@ -63,7 +74,7 @@ export default function AdminPage() {
       await loadDocuments();
       pollDocuments();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Upload failed");
+      setStatus(handleError(error, "Upload failed"));
     } finally {
       setIsUploading(false);
     }
@@ -77,7 +88,7 @@ export default function AdminPage() {
       await loadDocuments();
       pollDocuments();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Re-ingest failed");
+      setStatus(handleError(error, "Re-ingest failed"));
     }
   }
 
@@ -101,7 +112,7 @@ export default function AdminPage() {
       await loadDocuments();
       setStatus("Document deleted.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Delete failed");
+      setStatus(handleError(error, "Delete failed"));
     }
   }
 
