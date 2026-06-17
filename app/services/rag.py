@@ -7,6 +7,7 @@ from qdrant_client.http import models as qmodels
 
 from app.core.config import get_settings
 from app.schemas import SourceCitation
+from app.services.chunk_quality import assess_chunk_quality, is_form_or_survey_question
 from app.services.embeddings import get_embedding_model
 from app.services.vector_store import get_qdrant_client
 
@@ -33,14 +34,15 @@ class RAGService:
         final_limit = top_k or self.settings.retrieval_top_k
         candidate_limit = max(20, final_limit * 4)
         query_filter = build_qdrant_filter(filters or {})
+        allow_noisy = bool((filters or {}).get("include_noisy")) or is_form_or_survey_question(question)
 
         vector_chunks = self.vector_search(vector, candidate_limit, query_filter)
         keyword_chunks = self.keyword_search(question, candidate_limit, filters or {})
-        merged = merge_chunks(vector_chunks + keyword_chunks)
+        merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
         if not merged and filters:
             vector_chunks = self.vector_search(vector, candidate_limit, None)
             keyword_chunks = self.keyword_search(question, candidate_limit, {})
-            merged = merge_chunks(vector_chunks + keyword_chunks)
+            merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
         reranked = rerank_chunks(question, merged)
         compressed = [
             RetrievedChunk(
@@ -119,6 +121,14 @@ class RAGService:
         keyword_score: float = 0.0,
     ) -> RetrievedChunk:
         text = str(payload.get("text") or "").strip()
+        quality = assess_chunk_quality(text)
+        payload = {
+            **payload,
+            "chunk_id": payload.get("chunk_id") or payload.get("qdrant_point_id"),
+            "quality_score": float(payload.get("quality_score", quality.quality_score) or 0.0),
+            "is_noisy": bool(payload.get("is_noisy", quality.is_noisy)),
+            "noise_reasons": payload.get("noise_reasons") or quality.noise_reasons,
+        }
         return RetrievedChunk(
             text=text,
             citation=SourceCitation(
@@ -147,8 +157,10 @@ class RAGService:
         )
         return (
             "You are a safe dental assistant. Answer only from the provided evidence. "
+            "Use only context that directly answers the user's question. Do not dump raw chunk text. "
+            "Ignore irrelevant survey, questionnaire, tick/cross, form, index, bibliography, or table-artifact content unless the user specifically asks about those forms. "
             "Do not diagnose. Do not prescribe medicines. "
-            "If evidence is insufficient, say that the uploaded sources do not provide enough information. "
+            "If evidence is weak or insufficient, say: I do not have enough relevant evidence in the uploaded documents. "
             "For severe pain, swelling, fever, pus, trauma, or bleeding, recommend urgent dental care. "
             "Always include citations with document name and page number.\n\n"
             f"Context:\n{context or 'No relevant context was retrieved.'}\n\n"
@@ -159,8 +171,8 @@ class RAGService:
     def generate_answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
         if not chunks:
             return (
-                "I could not find enough indexed dental source material to answer that reliably. "
-                "Please ask an administrator to upload relevant dental PDFs, or consult a licensed dental professional."
+                "I do not have enough relevant evidence in the uploaded documents to answer that reliably. "
+                "For symptoms or treatment decisions, please consult a licensed dental professional."
             )
 
         prompt = self.build_prompt(question, chunks)
@@ -227,8 +239,8 @@ class RAGService:
         selected = [sentence for sentence in selected if sentence.strip()]
         if not selected:
             return (
-                "I found related source material, but it was not clear enough to answer this question directly. "
-                "Try asking a more specific dental question."
+                "I do not have enough relevant evidence in the uploaded documents to answer that directly. "
+                "For symptoms or treatment decisions, please consult a licensed dental professional."
             )
 
         answer = " ".join(selected)
@@ -392,10 +404,47 @@ def rerank_chunks(question: str, chunks: list[RetrievedChunk]) -> list[Retrieved
     for chunk in chunks:
         trust_boost = {"high": 0.25, "medium": 0.1, "low": -0.25}.get(str(chunk.metadata.get("trust_level")), 0.0)
         review_boost = 0.2 if chunk.metadata.get("review_status") == "approved" else -0.2
+        quality_score = float(chunk.metadata.get("quality_score", 1.0) or 0.0)
+        quality_boost = (quality_score - 0.6) * 0.5
         lexical = keyword_score(chunk.text, terms)
-        chunk.rerank_score = chunk.vector_score + (chunk.keyword_score * 0.35) + (lexical * 0.2) + trust_boost + review_boost
+        noise_penalty = -1.0 if chunk.metadata.get("is_noisy") else 0.0
+        chunk.rerank_score = (
+            chunk.vector_score
+            + (chunk.keyword_score * 0.35)
+            + (lexical * 0.2)
+            + trust_boost
+            + review_boost
+            + quality_boost
+            + noise_penalty
+        )
         chunk.citation.score = chunk.rerank_score
     return sorted(chunks, key=lambda item: item.rerank_score, reverse=True)
+
+
+def filter_chunks_for_question(question: str, chunks: list[RetrievedChunk], allow_noisy: bool = False) -> list[RetrievedChunk]:
+    return [chunk for chunk in chunks if should_use_chunk(question, chunk, allow_noisy=allow_noisy)]
+
+
+def should_use_chunk(question: str, chunk: RetrievedChunk, allow_noisy: bool = False) -> bool:
+    quality = assess_chunk_quality(chunk.text)
+    metadata_noisy = bool(chunk.metadata.get("is_noisy", quality.is_noisy))
+    quality_score = float(chunk.metadata.get("quality_score", quality.quality_score) or 0.0)
+    reasons = chunk.metadata.get("noise_reasons") or quality.noise_reasons
+    if isinstance(reasons, str):
+        reasons_l = reasons.lower()
+    else:
+        reasons_l = " ".join(str(reason).lower() for reason in reasons)
+
+    if allow_noisy:
+        return quality_score >= 0.1
+
+    if metadata_noisy or quality_score < 0.6:
+        return False
+    if any(term in reasons_l for term in ["questionnaire", "form", "h17040", "reference_index", "bibliography"]):
+        return False
+    if is_form_or_survey_question(chunk.text) and not is_form_or_survey_question(question):
+        return False
+    return True
 
 
 def compress_context(question: str, text: str) -> str:
