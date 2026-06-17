@@ -2,7 +2,7 @@ from app.schemas import SourceCitation
 from app.services.chunk_quality import assess_chunk_quality
 from app.services.evaluation import EvaluationCase, evaluate_cases, summarize_results
 from app.services.ingestion import clean_pdf_text
-from app.services.rag import RetrievedChunk, build_qdrant_filter, keyword_score, rerank_chunks, should_use_chunk
+from app.services.rag import RAGService, RetrievedChunk, build_qdrant_filter, keyword_score, rerank_chunks, should_use_chunk
 
 
 def test_clean_pdf_text_removes_artifacts_and_repairs_words():
@@ -92,3 +92,35 @@ def test_evaluation_scores_terms_citations_and_sources():
 
     assert results[0].passed
     assert summary["pass_rate"] == 1.0
+
+
+def test_openai_error_falls_back_to_extractive_answer():
+    from openai import RateLimitError
+    import httpx
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            response = httpx.Response(429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"))
+            raise RateLimitError("quota exceeded", response=response, body={"error": {"code": "insufficient_quota"}})
+
+    class FakeClient:
+        class Chat:
+            completions = FakeCompletions()
+
+        chat = Chat()
+
+    service = object.__new__(RAGService)
+    service.openai_client = FakeClient()
+    service.settings = type("Settings", (), {"openai_model": "gpt-test"})()
+    chunks = [
+        RetrievedChunk(
+            text="Oral and maxillofacial injuries can involve the oral cavity, teeth, jaws, and surrounding soft tissues.",
+            citation=SourceCitation(document_name="Oral Surgery", page_number=10, chunk_index=1),
+            metadata={"trust_level": "high", "review_status": "approved", "quality_score": 0.9},
+        )
+    ]
+
+    answer = service.generate_answer("Oral and maxillofacial injuries oral cavity", chunks)
+
+    assert "Based on the uploaded dental references" in answer
+    assert "maxillofacial injuries" in answer

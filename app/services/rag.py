@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import re
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
@@ -179,21 +179,24 @@ class RAGService:
         if not self.openai_client:
             return self.generate_extract_answer(question, chunks)
 
-        response = self.openai_client.chat.completions.create(
-            model=self.settings.openai_model,
-            temperature=0.2,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a dental RAG assistant. Ground every answer in retrieved context and "
-                        "include a brief safety caveat when the question asks for care decisions."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return response.choices[0].message.content.strip()
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=self.settings.openai_model,
+                temperature=0.2,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a dental RAG assistant. Ground every answer in retrieved context and "
+                            "include a brief safety caveat when the question asks for care decisions."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        except OpenAIError:
+            return self.generate_extract_answer(question, chunks)
 
     def answer(
         self,
