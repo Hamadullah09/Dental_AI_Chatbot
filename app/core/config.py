@@ -1,8 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import List
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Dental AI Chatbot"
     environment: str = "development"
     api_prefix: str = "/api"
-    cors_origins: List[str] = ["*"]
+    cors_origins: str = "*"
 
     database_url: str = "sqlite:///./dental_ai.db"
 
@@ -18,8 +17,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
     allow_admin_registration: bool = False
+    admin_email: str | None = None
+    admin_password: str | None = None
+    admin_full_name: str = "System Administrator"
 
-    qdrant_url: str = "http://localhost:6333"
+    qdrant_url: str | None = "http://localhost:6333"
+    qdrant_local_path: str | None = None
     qdrant_api_key: str | None = None
     qdrant_collection: str = "dental_docs"
     embedding_model_name: str = "all-MiniLM-L6-v2"
@@ -39,12 +42,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: str | List[str]) -> List[str]:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
 
 
 @lru_cache

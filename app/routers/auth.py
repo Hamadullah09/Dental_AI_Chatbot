@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User, UserRole
@@ -18,11 +17,9 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
     if existing:
         raise HTTPException(status_code=409, detail="Email is already registered")
 
-    user_count = db.query(User).count()
-    settings = get_settings()
     role = payload.role
-    if role == UserRole.admin and user_count > 0 and not settings.allow_admin_registration:
-        raise HTTPException(status_code=403, detail="Admin registration is disabled")
+    if role == UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin accounts are created by system configuration only")
 
     user = User(
         email=payload.email.lower(),

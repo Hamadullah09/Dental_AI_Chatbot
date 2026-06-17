@@ -1,16 +1,17 @@
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
-from sentence_transformers import SentenceTransformer
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Document, DocumentChunk, DocumentStatus
+from app.services.embeddings import get_embedding_model
+from app.services.vector_store import get_qdrant_client
 
 
 @dataclass
@@ -23,8 +24,8 @@ class ParsedChunk:
 class IngestionService:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self.embedding_model = SentenceTransformer(self.settings.embedding_model_name)
-        self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key)
+        self.embedding_model = get_embedding_model()
+        self.qdrant = get_qdrant_client()
 
     @property
     def vector_size(self) -> int:
@@ -32,7 +33,8 @@ class IngestionService:
 
     def ensure_collection(self) -> None:
         collections = self.qdrant.get_collections().collections
-        if any(collection.name == self.settings.qdrant_collection for collection in collections):
+        existing = next((collection for collection in collections if collection.name == self.settings.qdrant_collection), None)
+        if existing:
             return
         self.qdrant.create_collection(
             collection_name=self.settings.qdrant_collection,
@@ -47,23 +49,17 @@ class IngestionService:
 
     def parse_pdf(self, pdf_path: Path) -> list[ParsedChunk]:
         reader = PdfReader(str(pdf_path))
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.settings.chunk_size,
-            chunk_overlap=self.settings.chunk_overlap,
-            separators=["\n\n", "\n", ". ", " ", ""],
-        )
-
         chunks: list[ParsedChunk] = []
         chunk_index = 0
         for page_index, page in enumerate(reader.pages, start=1):
             try:
-                page_text = page.extract_text() or ""
+                raw_text = page.extract_text() or ""
             except Exception:
-                page_text = ""
-            page_text = " ".join(page_text.split())
+                raw_text = ""
+            page_text = clean_pdf_text(raw_text)
             if not page_text:
                 continue
-            for chunk_text in splitter.split_text(page_text):
+            for chunk_text in split_text(page_text, self.settings.chunk_size, self.settings.chunk_overlap):
                 chunks.append(
                     ParsedChunk(text=chunk_text, page_number=page_index, chunk_index=chunk_index)
                 )
@@ -109,6 +105,17 @@ class IngestionService:
                     "text": chunk.text,
                     "document_id": document.id,
                     "document_name": document.original_filename,
+                    "book_title": document.title or document.original_filename,
+                    "title": document.title or document.original_filename,
+                    "author_or_source": document.author_or_source,
+                    "edition": document.edition,
+                    "year": document.publication_year,
+                    "document_type": document.document_type.value,
+                    "trust_level": document.trust_level.value,
+                    "review_status": document.review_status.value,
+                    "specialty": document.specialty,
+                    "language": document.language,
+                    "file_hash": document.file_hash,
                     "source": document.original_filename,
                     "page_number": chunk.page_number,
                     "chunk_index": chunk.chunk_index,
@@ -135,3 +142,37 @@ class IngestionService:
             document.error_message = str(exc)
             db.commit()
             raise
+
+
+def clean_pdf_text(raw_text: str) -> str:
+    text = raw_text.replace("\x00", " ")
+    text = re.sub(r"\bBM\.indd\b.*?(?=\s|$)", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bPlate\s+[A-Za-z0-9.-]+\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<=\w)-\s+(?=\w)", "", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    return " ".join(text.split())
+
+
+def split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks: list[str] = []
+    start = 0
+    overlap = max(0, min(chunk_overlap, chunk_size - 1))
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        if end < len(text):
+            split_at = max(text.rfind(". ", start, end), text.rfind(" ", start, end))
+            if split_at > start + int(chunk_size * 0.5):
+                end = split_at + 1
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(text):
+            break
+        start = max(end - overlap, start + 1)
+    return chunks

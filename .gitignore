@@ -3,5 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 dental_ai.db
+backend.log
+backend.err.log
+qdrant_storage/
 uploaded_docs/*
 !uploaded_docs/.gitkeep

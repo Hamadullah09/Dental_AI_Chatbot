@@ -3,14 +3,14 @@ from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models import DocumentStatus, UserRole
+from app.models import DocumentStatus, DocumentType, ReviewStatus, TrustLevel, UserRole
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     full_name: str | None = None
-    role: UserRole = UserRole.patient
+    role: UserRole = Field(default=UserRole.patient, description="Public registration supports patient, student, and dentist roles.")
 
 
 class UserRead(BaseModel):
@@ -46,6 +46,10 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     session_id: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=12)
+    document_types: list[DocumentType] | None = None
+    trust_levels: list[TrustLevel] | None = None
+    review_status: ReviewStatus | None = ReviewStatus.approved
+    min_year: int | None = Field(default=None, ge=1800, le=2100)
 
 
 class ChatResponse(BaseModel):
@@ -76,6 +80,16 @@ class DocumentRead(BaseModel):
     id: str
     filename: str
     original_filename: str
+    title: str | None
+    author_or_source: str | None
+    edition: str | None
+    publication_year: int | None
+    document_type: DocumentType
+    trust_level: TrustLevel
+    review_status: ReviewStatus
+    specialty: str | None
+    language: str | None
+    file_hash: str | None
     status: DocumentStatus
     chunk_count: int
     error_message: str | None

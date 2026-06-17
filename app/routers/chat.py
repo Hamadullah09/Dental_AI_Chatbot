@@ -50,7 +50,17 @@ def chat(
 
     db.add(Message(session_id=session.id, role=MessageRole.user, content=question))
     service = RAGService()
-    answer, sources = service.answer(question, top_k=payload.top_k)
+    answer, sources = service.answer(
+        question,
+        top_k=payload.top_k,
+        filters={
+            "document_types": [item.value for item in payload.document_types] if payload.document_types else None,
+            "trust_levels": [item.value for item in payload.trust_levels] if payload.trust_levels else None,
+            "review_status": payload.review_status.value if payload.review_status else None,
+            "min_year": payload.min_year,
+            "user_role": current_user.role.value,
+        },
+    )
     assistant_message = Message(
         session_id=session.id,
         role=MessageRole.assistant,

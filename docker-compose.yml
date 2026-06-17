@@ -18,6 +18,16 @@ services:
       qdrant:
         condition: service_started
 
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      - api
+
   postgres:
     image: postgres:16-alpine
     environment:

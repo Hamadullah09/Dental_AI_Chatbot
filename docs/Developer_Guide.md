@@ -6,6 +6,29 @@
 - `app/services`: reusable application logic for ingestion, retrieval, generation, and upload storage.
 - `app/models.py`: SQLAlchemy persistence models.
 - `rag.py` and `ingest.py`: compatibility entry points kept at the repository root.
+- `frontend/`: React/Next.js app used as the primary product UI.
+
+## Frontend
+
+The primary frontend lives in `frontend/` and uses the Next.js app router.
+
+Pages:
+
+- `/login`: sign in.
+- `/register`: account creation and role selection.
+- `/chat`: ChatGPT-style dental RAG workspace.
+- `/history`: saved chat sessions.
+- `/admin`: admin PDF upload, document list, delete, and re-ingest.
+
+Local commands:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend proxies `/api/*` requests to the FastAPI backend through `next.config.mjs`.
 
 ## Adding A New LLM Provider
 

@@ -4,8 +4,9 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import SessionLocal, init_db
 from app.routers import admin, auth, chat, health
+from app.services.users import seed_admin_user
 
 
 settings = get_settings()
@@ -13,7 +14,7 @@ app = FastAPI(title=settings.app_name, version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,6 +30,8 @@ app.include_router(admin.router, prefix=settings.api_prefix)
 def on_startup() -> None:
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     init_db()
+    with SessionLocal() as db:
+        seed_admin_user(db, settings)
 
 
 @app.get("/")

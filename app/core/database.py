@@ -1,6 +1,7 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -27,4 +28,34 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     from app import models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except OperationalError as exc:
+        if "already exists" not in str(exc):
+            raise
+    ensure_lightweight_columns()
+
+
+def ensure_lightweight_columns() -> None:
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("documents")}
+    additions = {
+        "title": "VARCHAR(500)",
+        "author_or_source": "VARCHAR(500)",
+        "edition": "VARCHAR(255)",
+        "publication_year": "INTEGER",
+        "document_type": "VARCHAR(17) DEFAULT 'textbook' NOT NULL",
+        "trust_level": "VARCHAR(6) DEFAULT 'high' NOT NULL",
+        "review_status": "VARCHAR(10) DEFAULT 'approved' NOT NULL",
+        "specialty": "VARCHAR(255)",
+        "language": "VARCHAR(100)",
+        "file_hash": "VARCHAR(64)",
+    }
+    with engine.begin() as connection:
+        for name, ddl_type in additions.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE documents ADD COLUMN {name} {ddl_type}"))
+        connection.execute(text("UPDATE documents SET title = original_filename WHERE title IS NULL OR title = ''"))
+        connection.execute(text("UPDATE documents SET language = 'English' WHERE language IS NULL OR language = ''"))
