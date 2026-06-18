@@ -1,0 +1,136 @@
+"use client";
+
+import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
+import { Paperclip, Mic, ArrowUp, X, FileText, ImageIcon } from "lucide-react";
+
+interface ChatInputProps {
+  value: string;
+  onChange: (val: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  isLoading: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  attachment: File | null;
+  onRemoveAttachment: () => void;
+}
+
+export function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  isLoading,
+  fileInputRef,
+  onFileChange,
+  attachment,
+  onRemoveAttachment,
+}: ChatInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!isLoading && (value.trim() || attachment)) {
+        onSubmit(e);
+      }
+    }
+  };
+
+  const adjustHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
+    }
+  };
+
+  return (
+    <div className="w-full border-t border-dental-border bg-dental-darkBg p-4">
+      <form onSubmit={onSubmit} className="max-w-3xl mx-auto relative flex flex-col gap-2">
+        {/* Attachment Preview Card */}
+        {attachment && (
+          <div className="flex items-center gap-2.5 p-2 bg-dental-card border border-dental-border rounded-xl w-fit max-w-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
+            {attachment.type.startsWith("image/") ? (
+              <ImageIcon className="text-purple-400 shrink-0" size={16} />
+            ) : (
+              <FileText className="text-teal-400 shrink-0" size={16} />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white truncate font-medium">{attachment.name}</p>
+              <p className="text-[10px] text-dental-textSecondary">
+                {(attachment.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onRemoveAttachment}
+              className="text-gray-400 hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors shrink-0"
+              title="Remove attachment"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          {/* File Input (Hidden) */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={onFileChange}
+            className="hidden"
+            accept="image/*,application/pdf,application/msword,text/plain"
+          />
+
+          {/* Plus/Clip attachment icon */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-3 text-gray-400 hover:text-white hover:bg-dental-card rounded-full transition-colors flex-shrink-0"
+            title="Attach Report, Prescription, or X-ray"
+          >
+            <Paperclip className="w-5 h-5" />
+          </button>
+
+          {/* Text Area */}
+          <div className="flex-1 bg-dental-card border border-dental-border rounded-2xl flex items-center px-4 py-2.5 focus-within:border-dental-accent focus-within:ring-1 focus-within:ring-dental-accent/40 transition-all shadow-sm">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={value}
+              onChange={(e) => {
+                onChange(e.target.value);
+                adjustHeight();
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about tooth pain, braces, whitening, reports, or appointments"
+              className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-gray-500 resize-none max-h-40 py-1.5 focus:outline-none scrollbar-hide text-sm"
+            />
+          </div>
+
+          {/* Microphone Icon */}
+          <button
+            type="button"
+            className="p-3 text-gray-400 hover:text-white hover:bg-dental-card rounded-full transition-colors flex-shrink-0 hidden sm:block"
+            title="Voice message (Placeholder)"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+
+          {/* Send Button */}
+          <button
+            type="submit"
+            disabled={isLoading || (!value.trim() && !attachment)}
+            className="p-3 bg-dental-accent hover:bg-dental-accentHover disabled:opacity-45 disabled:pointer-events-none text-white rounded-full transition-colors flex-shrink-0 shadow-lg shadow-dental-accent/15"
+            title="Send message"
+          >
+            <ArrowUp className="w-5 h-5 text-white" />
+          </button>
+        </div>
+      </form>
+      <div className="text-center mt-2">
+        <p className="text-[10px] text-gray-600">
+          Dental AI can make mistakes. Consult a professional dentist for medical advice.
+        </p>
+      </div>
+    </div>
+  );
+}
