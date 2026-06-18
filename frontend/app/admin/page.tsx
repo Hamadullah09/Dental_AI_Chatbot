@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { FileUp, RefreshCw, Trash2 } from "lucide-react";
+import { FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
@@ -48,6 +48,18 @@ export default function AdminPage() {
     loadDocuments();
   }, [loadDocuments]);
 
+  function pollDocuments() {
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      await loadDocuments();
+      if (attempts >= 20) {
+        window.clearInterval(timer);
+        setStatus("Refresh documents to check final ingestion status.");
+      }
+    }, 3000);
+  }
+
   async function onUpload() {
     if (!token || !file) return;
     setIsUploading(true);
@@ -92,18 +104,6 @@ export default function AdminPage() {
     }
   }
 
-  function pollDocuments() {
-    let attempts = 0;
-    const timer = window.setInterval(async () => {
-      attempts += 1;
-      await loadDocuments();
-      if (attempts >= 20) {
-        window.clearInterval(timer);
-        setStatus("Refresh documents to check final ingestion status.");
-      }
-    }, 3000);
-  }
-
   async function onDelete(documentId: string) {
     if (!token) return;
     setStatus("Deleting document...");
@@ -119,122 +119,173 @@ export default function AdminPage() {
   return (
     <AuthGate adminOnly>
       <AppShell title="Admin Workspace" subtitle="Upload, re-ingest, and manage dental knowledge PDFs.">
-        <div className="content grid">
-          <section className="panel grid">
-            <h2>Upload Dental PDF</h2>
-            <div className="notice">
-              Add source metadata first. The parser then extracts page-aware text, cleans it, chunks it, embeds it, and stores citation payloads in Qdrant.
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 bg-dental-darkBg text-white h-full">
+          
+          {/* Upload Panel */}
+          <section className="p-6 bg-dental-card border border-dental-border rounded-2xl space-y-4 shadow-xl max-w-4xl mx-auto fade-in">
+            <div className="flex items-center gap-2">
+              <Database className="text-dental-accent w-5 h-5" />
+              <h2 className="text-base font-bold text-white">Upload Dental Clinical Source (PDF)</h2>
             </div>
-            <div className="grid two">
-              <label className="field">
-                <span>Book title</span>
-                <input className="input" value={bookTitle} onChange={(event) => setBookTitle(event.target.value)} placeholder="Dental Caries Textbook" />
-              </label>
-              <label className="field">
-                <span>Author or source</span>
-                <input className="input" value={authorOrSource} onChange={(event) => setAuthorOrSource(event.target.value)} placeholder="WHO / Author name" />
-              </label>
-              <label className="field">
-                <span>Year</span>
-                <input className="input" type="number" value={year} onChange={(event) => setYear(event.target.value)} placeholder="2022" min="1800" max="2100" />
-              </label>
-              <label className="field">
-                <span>Edition</span>
-                <input className="input" value={edition} onChange={(event) => setEdition(event.target.value)} placeholder="3rd edition" />
-              </label>
-              <label className="field">
-                <span>Document type</span>
-                <select className="input" value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
+            
+            <p className="text-xs text-dental-textSecondary leading-relaxed bg-dental-darkBg/60 border border-dental-border/50 p-3.5 rounded-xl">
+              Add dental textbook or guideline metadata below. The parsing engine extracts pages, chunks and embeds the text content, and indexes points in Qdrant for RAG retrievals.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Book or Article Title</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={bookTitle} onChange={(event) => setBookTitle(event.target.value)} placeholder="Dental Caries Textbook" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Author / Publisher Source</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={authorOrSource} onChange={(event) => setAuthorOrSource(event.target.value)} placeholder="WHO / Author name" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Publication Year</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" type="number" value={year} onChange={(event) => setYear(event.target.value)} placeholder="2022" min="1800" max="2100" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Edition</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={edition} onChange={(event) => setEdition(event.target.value)} placeholder="3rd edition" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Document Type</span>
+                <select className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
                   <option value="textbook">Textbook</option>
                   <option value="guideline">Guideline</option>
                   <option value="patient_education">Patient education</option>
                   <option value="research_article">Research article</option>
                   <option value="other">Other</option>
                 </select>
-              </label>
-              <label className="field">
-                <span>Trust level</span>
-                <select className="input" value={trustLevel} onChange={(event) => setTrustLevel(event.target.value)}>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Trust Level Filter</span>
+                <select className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={trustLevel} onChange={(event) => setTrustLevel(event.target.value)}>
+                  <option value="high">High Trust (Peer-reviewed)</option>
+                  <option value="medium">Medium Trust</option>
+                  <option value="low">Low Trust (General context)</option>
                 </select>
-              </label>
-              <label className="field">
-                <span>Specialty</span>
-                <input className="input" value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="Oral medicine" />
-              </label>
-              <label className="field">
-                <span>Language</span>
-                <input className="input" value={language} onChange={(event) => setLanguage(event.target.value)} placeholder="English" />
-              </label>
-              <label className="field">
-                <span>Review status</span>
-                <select className="input" value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value)}>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Clinical Specialty</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="Oral medicine / Surgery" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Language</span>
+                <input className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={language} onChange={(event) => setLanguage(event.target.value)} placeholder="English" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Review Status</span>
+                <select className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-dental-accent" value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value)}>
                   <option value="unreviewed">Unreviewed</option>
                   <option value="reviewed">Reviewed</option>
-                  <option value="approved">Approved</option>
+                  <option value="approved">Approved (Active in RAG)</option>
                   <option value="rejected">Rejected</option>
                 </select>
-              </label>
+              </div>
             </div>
-            <div className="inline-actions">
+
+            <div className="pt-2 border-t border-dental-border/40 flex flex-col sm:flex-row gap-3 items-center justify-between">
               <input
-                className="input"
+                className="w-full sm:w-auto bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs focus:outline-none"
                 type="file"
                 accept="application/pdf"
                 onChange={(event: ChangeEvent<HTMLInputElement>) => setFile(event.target.files?.[0] || null)}
               />
-              <button className="button" onClick={onUpload} disabled={!file || isUploading}>
-                <FileUp size={17} />
-                {isUploading ? "Working..." : "Upload"}
-              </button>
-              <button className="button secondary" onClick={loadDocuments}>
-                <RefreshCw size={17} />
-                Refresh
-              </button>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button 
+                  onClick={onUpload} 
+                  disabled={!file || isUploading}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-5 bg-dental-accent hover:bg-dental-accentHover text-white rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-40"
+                >
+                  <FileUp size={15} />
+                  {isUploading ? "Uploading..." : "Upload File"}
+                </button>
+                <button 
+                  onClick={loadDocuments}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-5 bg-dental-border hover:bg-white/5 border border-dental-border text-white rounded-xl text-xs font-semibold transition-all"
+                >
+                  <RefreshCw size={15} />
+                  Refresh List
+                </button>
+              </div>
             </div>
-            <p className="status">{status}</p>
           </section>
 
-          <section className="panel">
-            <h2>Documents</h2>
-            <div className="list">
-              {documents.length ? documents.map((document) => (
-                <div className="list-item" key={document.id}>
-                  <div className="inline-actions" style={{ justifyContent: "space-between" }}>
-                    <div>
-                      <strong>{document.title || document.original_filename}</strong>
-                      <p className="muted">
-                        {document.status} · {document.chunk_count} chunks · {new Date(document.created_at).toLocaleString()}
+          {/* Documents Listing */}
+          <section className="p-6 bg-dental-card border border-dental-border rounded-2xl space-y-4 shadow-xl max-w-4xl mx-auto">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Sparkles size={16} className="text-teal-400" /> Active Vector Store Indexes
+            </h2>
+            <div className="space-y-3">
+              {documents.length ? documents.map((doc) => {
+                let statusColor = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                if (doc.status === "ready") {
+                  statusColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                } else if (doc.status === "failed") {
+                  statusColor = "bg-red-500/10 text-red-400 border-red-500/20";
+                }
+
+                return (
+                  <div className="p-4 bg-dental-darkBg border border-dental-border rounded-xl space-y-3 flex flex-col md:flex-row justify-between md:items-center gap-3" key={doc.id}>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <strong className="text-xs text-white truncate max-w-[320px] md:max-w-[480px]">{doc.title || doc.original_filename}</strong>
+                        <span className={`px-2 py-0.5 border rounded-full text-[9px] uppercase font-bold tracking-wide ${statusColor}`}>
+                          {doc.status}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        {doc.chunk_count} chunks · Uploaded: {new Date(doc.created_at).toLocaleString()}
                       </p>
-                      <p className="muted">
-                        {document.author_or_source || "Unknown source"}
-                        {document.publication_year ? ` · ${document.publication_year}` : ""}
-                        {document.edition ? ` · ${document.edition}` : ""}
-                        {" · "}{document.document_type.replace("_", " ")}
-                        {" · "}{document.trust_level} trust
-                        {" · "}{document.review_status}
-                        {document.language ? ` · ${document.language}` : ""}
+                      <p className="text-[10px] text-dental-textSecondary leading-normal">
+                        {doc.author_or_source || "Unknown publisher"}
+                        {doc.publication_year ? ` · ${doc.publication_year}` : ""}
+                        {doc.edition ? ` · ${doc.edition}` : ""}
+                        {" · "}{doc.document_type.replace("_", " ")}
+                        {" · "}{doc.trust_level} trust
+                        {" · "}{doc.review_status} review status
+                        {doc.language ? ` · ${doc.language}` : ""}
                       </p>
+                      {doc.error_message && (
+                        <p className="text-[10px] text-red-400 flex items-center gap-1.5 mt-1 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
+                          <ShieldAlert size={12} className="shrink-0" />
+                          <span>Error: {doc.error_message}</span>
+                        </p>
+                      )}
                     </div>
-                    <span className="badge">{document.status}</span>
+                    
+                    <div className="flex gap-2 shrink-0 md:self-center">
+                      <button 
+                        onClick={() => onReingest(doc.id)}
+                        className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-dental-border border border-dental-border hover:bg-white/5 text-gray-300 rounded-lg text-[10px] font-semibold transition-colors"
+                      >
+                        <RefreshCw size={12} />
+                        Re-ingest
+                      </button>
+                      <button 
+                        onClick={() => onDelete(doc.id)}
+                        className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-[10px] font-bold transition-colors"
+                      >
+                        <Trash2 size={12} />
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  {document.error_message ? <p className="muted">{document.error_message}</p> : null}
-                  <div className="inline-actions">
-                    <button className="button secondary" onClick={() => onReingest(document.id)}>
-                      <RefreshCw size={16} />
-                      Re-ingest
-                    </button>
-                    <button className="button danger" onClick={() => onDelete(document.id)}>
-                      <Trash2 size={16} />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )) : <p className="muted">No documents uploaded yet.</p>}
+                );
+              }) : (
+                <p className="text-xs text-gray-600 italic text-center py-6">No vector sources uploaded yet.</p>
+              )}
             </div>
           </section>
+
+          {/* Floating status bar */}
+          {status && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-dental-card/95 border border-dental-border rounded-full text-[10px] text-dental-textSecondary max-w-md text-center shadow-2xl z-30 pointer-events-none">
+              {status}
+            </div>
+          )}
         </div>
       </AppShell>
     </AuthGate>

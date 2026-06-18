@@ -1,99 +1,122 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
-import { BookOpen, FileText, History, LogIn, LogOut, MessageSquare, Moon, Shield, Sun } from "lucide-react";
+import { ReactNode, useState, useEffect, createContext, useContext, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
+import { getSessions } from "@/lib/api";
+import type { ChatSession } from "@/lib/types";
+import { Sidebar } from "./Sidebar";
+import { ChatHeader } from "./ChatHeader";
+import { FeatureModals } from "./FeatureModals";
 
-const navItems = [
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/history", label: "History", icon: History },
-  { href: "/admin", label: "Admin", icon: Shield }
-];
+// Define a context for child pages to trigger sidebar modals
+interface ModalContextType {
+  openModal: (modalName: string) => void;
+  sessions: ChatSession[];
+  refreshSessions: () => Promise<void>;
+}
+
+const ModalContext = createContext<ModalContextType | null>(null);
+
+export function useModal() {
+  const context = useContext(ModalContext);
+  if (!context) {
+    throw new Error("useModal must be used inside a ModalProvider (AppShell)");
+  }
+  return context;
+}
 
 export function AppShell({ title, subtitle, children }: {
   title: string;
   subtitle?: string;
   children: ReactNode;
 }) {
-  const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const pathname = usePathname();
+  const { token, user } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
-  }
+  // Fetch recent sessions from API
+  const refreshSessions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await getSessions(token);
+      setSessions(data);
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    refreshSessions();
+  }, [refreshSessions]);
+
+  const handleOpenModal = (modalName: string) => {
+    if (modalName === "admin") {
+      router.push("/admin");
+    } else {
+      setActiveModal(modalName);
+    }
+  };
+
+  const handleSelectSession = (id: string) => {
+    router.push(`/chat?session_id=${id}`);
+  };
+
+  const handleNewChat = () => {
+    router.push("/chat");
+  };
+
+  const handleSendAttachedMessage = (filename: string, content: string) => {
+    // Save info to local storage so chat page can capture it on reload
+    localStorage.setItem("dental_ai_attached_file", filename);
+    localStorage.setItem("dental_ai_attached_prompt", content);
+    
+    // Redirect to chat
+    if (pathname === "/chat") {
+      window.dispatchEvent(new Event("dental_ai_trigger_attachment_send"));
+    } else {
+      router.push("/chat");
+    }
+  };
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <Link className="brand" href="/chat">
-          <span className="brand-mark"><BookOpen size={18} /></span>
-          <span>Dental AI</span>
-        </Link>
+    <ModalContext.Provider value={{ openModal: handleOpenModal, sessions, refreshSessions }}>
+      <div className="h-screen w-screen overflow-hidden flex bg-dental-darkBg text-dental-textPrimary selection:bg-dental-accent selection:text-white font-sans">
+        
+        {/* Sidebar Navigation */}
+        <Sidebar 
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          sessions={sessions}
+          activeSessionId={null} // Active state can be managed individually by page queries
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onOpenModal={handleOpenModal}
+        />
 
-        <nav className="nav-group">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            if (item.href === "/admin" && user?.role !== "admin") {
-              return null;
-            }
-            return (
-              <Link
-                key={item.href}
-                className={`nav-link ${pathname === item.href ? "active" : ""}`}
-                href={item.href}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+          
+          {/* Header Bar */}
+          <ChatHeader onMenuToggle={() => setSidebarOpen(true)} />
 
-        <div className="sidebar-footer">
-          <button className="side-action" onClick={toggleTheme}>
-            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </button>
-
-          {user ? (
-            <>
-              <div className="user-chip">
-                <strong>{user.full_name || user.email}</strong>
-                <span>{user.role}</span>
-              </div>
-              <button className="side-action" onClick={handleLogout}>
-                <LogOut size={18} />
-                <span>Sign out</span>
-              </button>
-            </>
-          ) : (
-            <Link className="side-action" href="/login">
-              <LogIn size={18} />
-              <span>Sign in</span>
-            </Link>
-          )}
+          {/* Children Viewport */}
+          <main className="flex-1 flex flex-col min-h-0 bg-dental-darkBg relative">
+            {children}
+          </main>
         </div>
-      </aside>
 
-      <main className="page">
-        <header className="topbar">
-          <div>
-            <h1>{title}</h1>
-            {subtitle ? <p>{subtitle}</p> : null}
-          </div>
-          <button className="button secondary" onClick={toggleTheme}>
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-            <span>{theme === "dark" ? "Light" : "Dark"}</span>
-          </button>
-        </header>
-        {children}
-      </main>
-    </div>
+        {/* Features Interactive Modals */}
+        <FeatureModals 
+          isOpen={activeModal !== null} 
+          onClose={() => setActiveModal(null)} 
+          activeModal={activeModal || ""} 
+          onSendAttachedMessage={handleSendAttachedMessage}
+        />
+      </div>
+    </ModalContext.Provider>
   );
 }
