@@ -1,13 +1,22 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles } from "lucide-react";
+import { Download, FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
-import { deleteDocument, getDocuments, isInvalidTokenError, reingestDocument, uploadDocument } from "@/lib/api";
+import {
+  deleteDocument,
+  downloadDatasetReviewCsv,
+  generateDataset,
+  getDatasetGenerationStatus,
+  getDocuments,
+  isInvalidTokenError,
+  reingestDocument,
+  uploadDocument
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { DocumentItem } from "@/lib/types";
+import type { DatasetGenerationStatus, DocumentItem } from "@/lib/types";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -25,6 +34,12 @@ export default function AdminPage() {
   const [reviewStatus, setReviewStatus] = useState("approved");
   const [status, setStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [datasetLimit, setDatasetLimit] = useState(25);
+  const [examplesPerChunk, setExamplesPerChunk] = useState(5);
+  const [datasetDocumentId, setDatasetDocumentId] = useState("");
+  const [datasetStatus, setDatasetStatus] = useState<DatasetGenerationStatus | null>(null);
+  const [isGeneratingDataset, setIsGeneratingDataset] = useState(false);
+  const canDownloadDataset = Boolean(datasetStatus?.generated_items && datasetStatus.state !== "running" && datasetStatus.state !== "queued");
 
   const handleError = useCallback((error: unknown, fallback: string) => {
     if (isInvalidTokenError(error)) {
@@ -47,6 +62,27 @@ export default function AdminPage() {
   useEffect(() => {
     loadDocuments();
   }, [loadDocuments]);
+
+  const loadDatasetStatus = useCallback(async () => {
+    if (!token) return;
+    try {
+      const nextStatus = await getDatasetGenerationStatus(token);
+      setDatasetStatus(nextStatus);
+      setIsGeneratingDataset(nextStatus.state === "running" || nextStatus.state === "queued");
+    } catch (error) {
+      setStatus(handleError(error, "Could not load dataset generation status"));
+    }
+  }, [handleError, token]);
+
+  useEffect(() => {
+    loadDatasetStatus();
+  }, [loadDatasetStatus]);
+
+  useEffect(() => {
+    if (!token || !isGeneratingDataset) return;
+    const timer = window.setInterval(loadDatasetStatus, 3000);
+    return () => window.clearInterval(timer);
+  }, [isGeneratingDataset, loadDatasetStatus, token]);
 
   function pollDocuments() {
     let attempts = 0;
@@ -113,6 +149,46 @@ export default function AdminPage() {
       setStatus("Document deleted.");
     } catch (error) {
       setStatus(handleError(error, "Delete failed"));
+    }
+  }
+
+  async function onGenerateDataset() {
+    if (!token) return;
+    setIsGeneratingDataset(true);
+    setStatus("Q&A dataset generation queued...");
+    try {
+      const response = await generateDataset(token, {
+        document_id: datasetDocumentId || null,
+        limit: datasetLimit,
+        examples_per_chunk: examplesPerChunk,
+        min_quality: 0.6,
+        include_noisy: false
+      });
+      setDatasetStatus(response);
+      setStatus(response.message || "Dataset generation started.");
+      window.setTimeout(loadDatasetStatus, 2000);
+    } catch (error) {
+      setIsGeneratingDataset(false);
+      setStatus(handleError(error, "Dataset generation failed to start"));
+    }
+  }
+
+  async function onDownloadDataset() {
+    if (!token) return;
+    setStatus("Preparing expert review CSV...");
+    try {
+      const blob = await downloadDatasetReviewCsv(token);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "Database Q&A.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setStatus("Expert review CSV downloaded.");
+    } catch (error) {
+      setStatus(handleError(error, "Could not download expert review CSV"));
     }
   }
 
@@ -211,6 +287,115 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
+          </section>
+
+          {/* Dataset Generation */}
+          <section className="p-6 bg-dental-card border border-dental-border rounded-2xl space-y-4 shadow-xl max-w-4xl mx-auto">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Wand2 className="text-dental-accent w-5 h-5" />
+                  <h2 className="text-base font-bold text-dental-textPrimary">Generate Draft Q&A Dataset</h2>
+                </div>
+                <p className="text-xs text-dental-textSecondary leading-relaxed">
+                  Select a PDF, then create expert-review draft Q&A rows from its chunks. Existing chunks are skipped, and missing chunks are generated automatically.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={onGenerateDataset}
+                  disabled={isGeneratingDataset}
+                  className="flex items-center justify-center gap-2 py-2.5 px-5 bg-dental-accent hover:bg-dental-accentHover text-white rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-40"
+                >
+                  <Wand2 size={15} />
+                  {isGeneratingDataset ? "Generating..." : "Generate Q&A"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onDownloadDataset}
+                  disabled={!canDownloadDataset}
+                  className="flex items-center justify-center gap-2 py-2.5 px-5 bg-dental-border hover:bg-dental-card border border-dental-border text-dental-textPrimary rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                >
+                  <Download size={15} />
+                  Download CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <label className="flex flex-col gap-1 sm:col-span-3">
+                <span className="text-[10px] text-dental-textSecondary font-semibold uppercase tracking-wider">PDF Chunks To Use</span>
+                <select
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2.5 px-3 text-xs text-dental-textPrimary focus:outline-none focus:border-dental-accent"
+                  value={datasetDocumentId}
+                  onChange={(event) => setDatasetDocumentId(event.target.value)}
+                  disabled={isGeneratingDataset}
+                >
+                  <option value="">All ready PDFs</option>
+                  {documents.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {(doc.title || doc.original_filename)} ({doc.chunk_count} chunks, {doc.status})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] text-dental-textSecondary font-semibold uppercase tracking-wider">Chunk Limit</span>
+                <input
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-dental-textPrimary focus:outline-none focus:border-dental-accent"
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={datasetLimit}
+                  onChange={(event) => setDatasetLimit(Number(event.target.value) || 1)}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] text-dental-textSecondary font-semibold uppercase tracking-wider">Examples Per Chunk</span>
+                <input
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-2 px-3 text-xs text-dental-textPrimary focus:outline-none focus:border-dental-accent"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={examplesPerChunk}
+                  onChange={(event) => setExamplesPerChunk(Number(event.target.value) || 1)}
+                />
+              </label>
+            </div>
+
+            <div className="bg-dental-darkBg/60 border border-dental-border rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <p className="text-dental-textSecondary">State</p>
+                <p className="font-bold text-dental-textPrimary">{datasetStatus?.state || "idle"}</p>
+              </div>
+              <div>
+                <p className="text-dental-textSecondary">Chunks</p>
+                <p className="font-bold text-dental-textPrimary">{datasetStatus?.processed_chunks || 0}</p>
+              </div>
+              <div>
+                <p className="text-dental-textSecondary">Q&A Rows</p>
+                <p className="font-bold text-dental-textPrimary">{datasetStatus?.generated_items || 0}</p>
+              </div>
+              <div>
+                <p className="text-dental-textSecondary">Skipped</p>
+                <p className="font-bold text-dental-textPrimary">{datasetStatus?.skipped_chunks || 0}</p>
+              </div>
+              <div>
+                <p className="text-dental-textSecondary">Already Done</p>
+                <p className="font-bold text-dental-textPrimary">{datasetStatus?.duplicate_chunks || 0}</p>
+              </div>
+              <div className="md:col-span-3">
+                <p className="text-dental-textSecondary">PDF</p>
+                <p className="font-bold text-dental-textPrimary truncate">{datasetStatus?.document_name || "All ready PDFs"}</p>
+              </div>
+            </div>
+
+            {datasetStatus?.message && (
+              <p className="text-xs text-dental-textSecondary">
+                {datasetStatus.message}
+              </p>
+            )}
           </section>
 
           {/* Documents Listing */}

@@ -1,4 +1,4 @@
-import type { AuthResponse, ChatResponse, ChatSession, DocumentItem, UserRole } from "./types";
+import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, DocumentItem, UserRole } from "./types";
 
 type ApiOptions = RequestInit & {
   token?: string | null;
@@ -127,4 +127,35 @@ export function deleteDocument(documentId: string, token: string) {
     method: "DELETE",
     token
   });
+}
+
+export function getDatasetGenerationStatus(token: string) {
+  return request<DatasetGenerationStatus>("/admin/dataset/status", { token });
+}
+
+export function generateDataset(token: string, input: {
+  document_id?: string | null;
+  limit?: number;
+  examples_per_chunk?: number;
+  min_quality?: number;
+  include_noisy?: boolean;
+}) {
+  return request<DatasetGenerationStatus>("/admin/dataset/generate", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input)
+  });
+}
+
+export async function downloadDatasetReviewCsv(token: string) {
+  const response = await fetch("/api/admin/dataset/download", {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new ApiError(detail || "Dataset download failed", response.status);
+  }
+  return response.blob();
 }

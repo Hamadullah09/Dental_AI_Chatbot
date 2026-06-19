@@ -98,6 +98,30 @@ class DocumentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DatasetGenerationRequest(BaseModel):
+    document_id: str | None = None
+    limit: int | None = Field(default=25, ge=1, le=500)
+    examples_per_chunk: int = Field(default=5, ge=1, le=10)
+    min_quality: float = Field(default=0.6, ge=0.0, le=1.0)
+    include_noisy: bool = False
+
+
+class DatasetGenerationStatus(BaseModel):
+    state: str
+    processed_chunks: int = 0
+    generated_items: int = 0
+    skipped_chunks: int = 0
+    duplicate_chunks: int = 0
+    removed_existing_rows: int = 0
+    document_id: str | None = None
+    document_name: str | None = None
+    output_path: str
+    skipped_path: str
+    review_csv_path: str | None = None
+    message: str | None = None
+    updated_at: str | None = None
+
+
 class FeedbackCreate(BaseModel):
     message_id: str
     rating: int = Field(ge=1, le=5)

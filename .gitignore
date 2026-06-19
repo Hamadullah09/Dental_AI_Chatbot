@@ -14,3 +14,8 @@ draft_dental_qa.jsonl
 skipped_chunks.jsonl
 draft_dental_qa_review.csv
 dental_qa.jsonl
+
+.venv/
+.venv_run/
+dataset_generation_status.json
+skipped_chunks_invalid_model_archive.jsonl

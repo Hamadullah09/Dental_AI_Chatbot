@@ -65,3 +65,19 @@ export type DocumentItem = {
   error_message: string | null;
   created_at: string;
 };
+
+export type DatasetGenerationStatus = {
+  state: "idle" | "queued" | "running" | "completed" | "failed" | string;
+  processed_chunks: number;
+  generated_items: number;
+  skipped_chunks: number;
+  duplicate_chunks: number;
+  removed_existing_rows: number;
+  document_id?: string | null;
+  document_name?: string | null;
+  output_path: string;
+  skipped_path: string;
+  review_csv_path?: string | null;
+  message: string | null;
+  updated_at?: string | null;
+};
