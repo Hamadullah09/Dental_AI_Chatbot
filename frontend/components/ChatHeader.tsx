@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Sun, Moon, Tooth } from "lucide-react";
+import { Menu, Sun, Moon, Stethoscope } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 
 interface ChatHeaderProps {
@@ -16,16 +16,16 @@ export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
       <div className="flex items-center gap-2">
         <button 
           onClick={onMenuToggle}
-          className="lg:hidden p-2 -ml-2 text-gray-400 hover:text-white rounded-lg hover:bg-dental-card transition-colors"
+          className="lg:hidden p-2 -ml-2 text-dental-textSecondary hover:text-dental-textPrimary rounded-lg hover:bg-dental-card transition-colors"
           aria-label="Toggle sidebar"
         >
           <Menu className="w-6 h-6" />
         </button>
         <div className="flex items-center gap-2 lg:hidden">
           <div className="bg-dental-accent/10 p-1.5 rounded-lg">
-            <Tooth className="text-dental-accent w-4 h-4" />
+            <Stethoscope className="text-dental-accent w-4 h-4" />
           </div>
-          <span className="font-semibold text-white text-sm">Dental AI</span>
+          <span className="font-semibold text-dental-textPrimary text-sm">Dental AI</span>
         </div>
       </div>
 
@@ -36,7 +36,7 @@ export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
       <button 
         type="button"
         onClick={toggleTheme}
-        className="p-2 text-gray-400 hover:text-white hover:bg-dental-card rounded-xl transition-colors"
+        className="p-2 text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-xl transition-colors"
         aria-label="Toggle theme"
       >
         {theme === "dark" ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5" />}

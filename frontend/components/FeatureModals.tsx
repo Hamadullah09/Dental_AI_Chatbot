@@ -882,7 +882,7 @@ function PersonalizationContent() {
         </div>
         <div>
           <h2 className="text-xl font-bold">AI Assistant Personalization</h2>
-          <p className="text-xs text-dental-textSecondary">Tailor the chatbot's vocabulary and diagnostic expertise focus.</p>
+          <p className="text-xs text-dental-textSecondary">Tailor the chatbot&apos;s vocabulary and diagnostic expertise focus.</p>
         </div>
       </div>
 

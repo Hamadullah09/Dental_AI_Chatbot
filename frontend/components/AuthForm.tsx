@@ -6,7 +6,7 @@ import { FormEvent, useState } from "react";
 import { login, register } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
-import { Tooth, AlertCircle, KeyRound, Mail, User } from "lucide-react";
+import { Stethoscope, AlertCircle, KeyRound, Mail, User } from "lucide-react";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -42,10 +42,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         {/* Branding Logo */}
         <div className="text-center flex flex-col items-center gap-2">
           <div className="bg-dental-accent/10 p-3.5 rounded-2xl text-dental-accent shadow-md shadow-dental-accent/5">
-            <Tooth size={28} />
+            <Stethoscope size={28} />
           </div>
           <div className="mt-2 space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight text-white">
+            <h1 className="text-2xl font-bold tracking-tight text-dental-textPrimary">
               {mode === "login" ? "Welcome back" : "Create your account"}
             </h1>
             <p className="text-xs text-dental-textSecondary leading-normal max-w-[280px] mx-auto">
@@ -66,7 +66,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
                   <input 
-                    className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-white focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder-gray-600" 
+                    className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-dental-textPrimary focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder:text-dental-textSecondary" 
                     type="text" 
                     placeholder="Wazeer Ali"
                     value={fullName} 
@@ -83,7 +83,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
                 <input 
-                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-white focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder-gray-600" 
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-dental-textPrimary focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder:text-dental-textSecondary" 
                   type="email" 
                   placeholder="name@example.com"
                   value={email} 
@@ -99,7 +99,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               <div className="relative">
                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
                 <input 
-                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-white focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder-gray-600" 
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 pl-10 pr-3 text-sm text-dental-textPrimary focus:outline-none focus:border-dental-accent focus:ring-1 focus:ring-dental-accent/40 transition-all placeholder:text-dental-textSecondary" 
                   type="password" 
                   placeholder="••••••••"
                   value={password} 
@@ -115,7 +115,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-semibold text-dental-textSecondary uppercase tracking-wider">Clinical Workspace Role</label>
                 <select 
-                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 px-3 text-sm text-white focus:outline-none focus:border-dental-accent transition-colors" 
+                  className="w-full bg-dental-darkBg border border-dental-border rounded-xl py-3 px-3 text-sm text-dental-textPrimary focus:outline-none focus:border-dental-accent transition-colors" 
                   value={role} 
                   onChange={(event) => setRole(event.target.value as UserRole)}
                 >

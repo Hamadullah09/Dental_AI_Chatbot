@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { Tooth, FileText, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Stethoscope, FileText, ThumbsUp, ThumbsDown } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { sendFeedback } from "@/lib/api";
 
@@ -46,7 +46,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
         if (match.index > lastIndex) {
           parts.push(formattedLine.substring(lastIndex, match.index));
         }
-        parts.push(<strong key={match.index} className="font-semibold text-white">{match[1]}</strong>);
+        parts.push(<strong key={match.index} className="font-semibold text-dental-textPrimary">{match[1]}</strong>);
         lastIndex = boldRegex.lastIndex;
       }
       if (lastIndex < formattedLine.length) {
@@ -58,14 +58,14 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
       if (line.trim().startsWith("• ") || line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
         const cleanText = line.trim().substring(2);
         return (
-          <li key={idx} className="ml-4 list-disc text-sm text-gray-200 mt-1 leading-relaxed">
+          <li key={idx} className="ml-4 list-disc text-sm text-dental-textPrimary mt-1 leading-relaxed">
             {parts.length > 0 ? parts : cleanText}
           </li>
         );
       }
 
       return (
-        <p key={idx} className="text-sm text-gray-200 leading-relaxed mb-2 break-words">
+        <p key={idx} className="text-sm text-dental-textPrimary leading-relaxed mb-2 break-words">
           {contentElements}
         </p>
       );
@@ -80,7 +80,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
           ? "bg-dental-card border border-dental-border text-dental-accent" 
           : "bg-gradient-to-br from-dental-accent to-blue-600 text-white text-xs font-bold"
       }`}>
-        {isAssistant ? <Tooth size={15} /> : initials}
+        {isAssistant ? <Stethoscope size={15} /> : initials}
       </div>
 
       {/* Bubble Content */}
@@ -88,7 +88,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
         <div className={`px-4 py-3 text-sm leading-relaxed rounded-2xl shadow-sm ${
           message.role === "user"
             ? "bg-dental-accent text-white rounded-tr-sm"
-            : "bg-dental-card border border-dental-border text-gray-200 rounded-tl-sm"
+            : "bg-dental-card border border-dental-border text-dental-textPrimary rounded-tl-sm"
         }`}>
           {/* Main Text */}
           {isAssistant ? (
@@ -107,7 +107,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
                 {message.sources.map((source, index) => (
                   <span 
                     key={index}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-dental-darkBg border border-dental-border text-[10px] text-dental-textSecondary hover:text-white transition-colors"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-dental-darkBg border border-dental-border text-[10px] text-dental-textSecondary hover:text-dental-textPrimary transition-colors"
                     title={`Source chunk: ${source.chunk_index}, confidence score: ${source.score ? (source.score * 100).toFixed(0) : "N/A"}%`}
                   >
                     <FileText size={10} className="text-teal-500 shrink-0" />
@@ -122,7 +122,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
 
         {/* Timestamp and Feedback bar */}
         <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] text-gray-600">
+          <span className="text-[10px] text-dental-textSecondary">
             {message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
 
@@ -134,7 +134,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
                 onClick={() => handleFeedback(5, "helpful")}
                 disabled={feedbackGiven !== null}
                 className={`p-1.5 rounded-lg hover:bg-white/5 transition-all ${
-                  feedbackGiven === "helpful" ? "text-dental-accent" : "text-gray-500 hover:text-white"
+                  feedbackGiven === "helpful" ? "text-dental-accent" : "text-dental-textSecondary hover:text-dental-textPrimary"
                 }`}
                 title="Helpful response"
               >
@@ -145,7 +145,7 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
                 onClick={() => handleFeedback(1, "needs-work")}
                 disabled={feedbackGiven !== null}
                 className={`p-1.5 rounded-lg hover:bg-white/5 transition-all ${
-                  feedbackGiven === "needs-work" ? "text-red-400" : "text-gray-500 hover:text-white"
+                  feedbackGiven === "needs-work" ? "text-red-400" : "text-dental-textSecondary hover:text-dental-textPrimary"
                 }`}
                 title="Needs improvements"
               >

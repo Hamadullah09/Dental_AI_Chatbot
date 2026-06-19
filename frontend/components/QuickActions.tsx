@@ -14,7 +14,7 @@ export function QuickActions({ onQuickAction, onOpenModal, onTriggerFileUpload }
       <button 
         type="button"
         onClick={() => onQuickAction("I have acute tooth pain. What should I check for and do?")}
-        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-white text-center"
+        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-dental-textPrimary text-center"
       >
         <Activity className="text-rose-400 w-6 h-6 group-hover:scale-110 transition-transform" />
         <span className="text-sm font-medium">Tooth Pain Help</span>
@@ -23,7 +23,7 @@ export function QuickActions({ onQuickAction, onOpenModal, onTriggerFileUpload }
       <button 
         type="button"
         onClick={() => onOpenModal("appointments")}
-        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-white text-center"
+        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-dental-textPrimary text-center"
       >
         <CalendarPlus className="text-sky-400 w-6 h-6 group-hover:scale-110 transition-transform" />
         <span className="text-sm font-medium">Book Appointment</span>
@@ -32,7 +32,7 @@ export function QuickActions({ onQuickAction, onOpenModal, onTriggerFileUpload }
       <button 
         type="button"
         onClick={onTriggerFileUpload}
-        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-white text-center"
+        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-dental-textPrimary text-center"
       >
         <UploadCloud className="text-purple-400 w-6 h-6 group-hover:scale-110 transition-transform" />
         <span className="text-sm font-medium">Upload X-ray</span>
@@ -41,7 +41,7 @@ export function QuickActions({ onQuickAction, onOpenModal, onTriggerFileUpload }
       <button 
         type="button"
         onClick={() => onOpenModal("tips")}
-        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-white text-center"
+        className="flex flex-col items-center gap-2 p-4 bg-dental-card border border-dental-border rounded-xl hover:bg-dental-border hover:border-dental-accent/50 transition-all group text-dental-textPrimary text-center"
       >
         <Sparkles className="text-amber-400 w-6 h-6 group-hover:scale-110 transition-transform" />
         <span className="text-sm font-medium">Dental Care Tips</span>

@@ -54,7 +54,7 @@ export function ChatInput({
               <FileText className="text-teal-400 shrink-0" size={16} />
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-white truncate font-medium">{attachment.name}</p>
+              <p className="text-xs text-dental-textPrimary truncate font-medium">{attachment.name}</p>
               <p className="text-[10px] text-dental-textSecondary">
                 {(attachment.size / 1024).toFixed(1)} KB
               </p>
@@ -62,7 +62,7 @@ export function ChatInput({
             <button
               type="button"
               onClick={onRemoveAttachment}
-              className="text-gray-400 hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors shrink-0"
+              className="text-dental-textSecondary hover:text-dental-textPrimary p-1 hover:bg-dental-border rounded-lg transition-colors shrink-0"
               title="Remove attachment"
             >
               <X size={14} />
@@ -84,7 +84,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-3 text-gray-400 hover:text-white hover:bg-dental-card rounded-full transition-colors flex-shrink-0"
+            className="p-3 text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-full transition-colors flex-shrink-0"
             title="Attach Report, Prescription, or X-ray"
           >
             <Paperclip className="w-5 h-5" />
@@ -102,14 +102,14 @@ export function ChatInput({
               }}
               onKeyDown={handleKeyDown}
               placeholder="Ask about tooth pain, braces, whitening, reports, or appointments"
-              className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-gray-500 resize-none max-h-40 py-1.5 focus:outline-none scrollbar-hide text-sm"
+              className="w-full bg-transparent border-none focus:ring-0 text-dental-textPrimary placeholder:text-dental-textSecondary resize-none max-h-40 py-1.5 focus:outline-none scrollbar-hide text-sm"
             />
           </div>
 
           {/* Microphone Icon */}
           <button
             type="button"
-            className="p-3 text-gray-400 hover:text-white hover:bg-dental-card rounded-full transition-colors flex-shrink-0 hidden sm:block"
+            className="p-3 text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-full transition-colors flex-shrink-0 hidden sm:block"
             title="Voice message (Placeholder)"
           >
             <Mic className="w-5 h-5" />
@@ -127,7 +127,7 @@ export function ChatInput({
         </div>
       </form>
       <div className="text-center mt-2">
-        <p className="text-[10px] text-gray-600">
+        <p className="text-[10px] text-dental-textSecondary">
           Dental AI can make mistakes. Consult a professional dentist for medical advice.
         </p>
       </div>

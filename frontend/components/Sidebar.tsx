@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { 
   FolderOpen, Calendar, FileText, Sparkles, Settings, 
-  MessageSquare, Plus, Search, ChevronUp, Tooth, X 
+  MessageSquare, Plus, Search, ChevronUp, Stethoscope, X 
 } from "lucide-react";
 import type { ChatSession } from "@/lib/types";
 import { ProfileMenu } from "./ProfileMenu";
@@ -60,11 +60,11 @@ export function Sidebar({
         <div className="p-4 flex items-center justify-between border-b border-dental-border">
           <div className="flex items-center gap-2">
             <div className="bg-dental-accent/10 p-2 rounded-lg">
-              <Tooth className="text-dental-accent w-6 h-6" />
+              <Stethoscope className="text-dental-accent w-6 h-6" />
             </div>
-            <span className="font-semibold text-lg tracking-tight text-white">Dental AI Assistant</span>
+            <span className="font-semibold text-lg tracking-tight text-dental-textPrimary">Dental AI Assistant</span>
           </div>
-          <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-white p-1 rounded">
+          <button onClick={onClose} className="lg:hidden text-dental-textSecondary hover:text-dental-textPrimary p-1 rounded">
             <X size={20} />
           </button>
         </div>
@@ -76,7 +76,7 @@ export function Sidebar({
               onNewChat();
               onClose();
             }}
-            className="w-full flex items-center justify-center gap-3 px-3 py-3 bg-dental-card hover:bg-dental-border border border-dental-border rounded-xl transition-all text-sm group text-white font-medium"
+            className="w-full flex items-center justify-center gap-3 px-3 py-3 bg-dental-card hover:bg-dental-border border border-dental-border rounded-xl transition-all text-sm group text-dental-textPrimary font-medium"
           >
             <Plus className="w-4 h-4 text-dental-textSecondary group-hover:text-dental-accent transition-colors" />
             <span>New Consultation</span>
@@ -92,7 +92,7 @@ export function Sidebar({
               placeholder="Search history..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-dental-darkBg border border-dental-border rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-dental-accent transition-colors placeholder-gray-600"
+              className="w-full bg-dental-darkBg border border-dental-border rounded-lg py-2 pl-9 pr-3 text-sm text-dental-textPrimary focus:outline-none focus:border-dental-accent transition-colors placeholder:text-dental-textSecondary"
             />
           </div>
         </div>
@@ -101,35 +101,35 @@ export function Sidebar({
         <nav className="flex-1 px-3 overflow-y-auto space-y-1 py-2">
           <button 
             onClick={() => { onOpenModal("library"); onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-lg transition-colors text-left"
           >
             <FolderOpen className="w-4 h-4 text-teal-400" /> 
             <span>Patient Library</span>
           </button>
           <button 
             onClick={() => { onOpenModal("appointments"); onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-lg transition-colors text-left"
           >
             <Calendar className="w-4 h-4 text-sky-400" /> 
             <span>Appointments</span>
           </button>
           <button 
             onClick={() => { onOpenModal("reports"); onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-lg transition-colors text-left"
           >
             <FileText className="w-4 h-4 text-purple-400" /> 
             <span>Reports</span>
           </button>
           <button 
             onClick={() => { onOpenModal("tips"); onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-lg transition-colors text-left"
           >
             <Sparkles className="w-4 h-4 text-yellow-400" /> 
             <span>Dental Tips</span>
           </button>
           <button 
             onClick={() => { onOpenModal("settings"); onClose(); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-lg transition-colors text-left"
           >
             <Settings className="w-4 h-4 text-gray-400" /> 
             <span>Settings</span>
@@ -139,7 +139,7 @@ export function Sidebar({
           {user?.role === "admin" && (
             <button 
               onClick={() => { onOpenModal("admin"); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:text-white hover:bg-dental-card rounded-lg transition-colors text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-500 hover:text-red-600 hover:bg-dental-card rounded-lg transition-colors text-left"
             >
               <Settings className="w-4 h-4 text-red-400" /> 
               <span>Admin Workspace</span>
@@ -148,7 +148,7 @@ export function Sidebar({
 
           {/* Recent Chats */}
           <div className="pt-4 mt-4 border-t border-dental-border">
-            <p className="px-3 text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">Recent Chats</p>
+            <p className="px-3 text-xs font-semibold text-dental-textSecondary mb-2 uppercase tracking-wider">Recent Chats</p>
             <div className="space-y-1">
               {filteredSessions.length ? (
                 filteredSessions.map((session) => (
@@ -160,8 +160,8 @@ export function Sidebar({
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left truncate ${
                       activeSessionId === session.id 
-                        ? "bg-dental-border text-white border-l-2 border-dental-accent" 
-                        : "text-gray-400 hover:text-white hover:bg-dental-card"
+                        ? "bg-dental-border text-dental-textPrimary border-l-2 border-dental-accent" 
+                        : "text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card"
                     }`}
                   >
                     <MessageSquare className="w-4 h-4 shrink-0 text-dental-accent/60" />
@@ -169,7 +169,7 @@ export function Sidebar({
                   </button>
                 ))
               ) : (
-                <p className="px-3 text-xs text-gray-600 italic">No matching chats</p>
+                <p className="px-3 text-xs text-dental-textSecondary italic">No matching chats</p>
               )}
             </div>
           </div>
@@ -185,7 +185,7 @@ export function Sidebar({
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{user?.full_name || user?.email || "Wazeer Ali"}</p>
+              <p className="text-sm font-semibold text-dental-textPrimary truncate">{user?.full_name || user?.email || "Wazeer Ali"}</p>
               <p className="text-xs text-dental-accent truncate font-medium">
                 {user?.role === "admin" ? "Admin Account" : "Premium Plan"}
               </p>
