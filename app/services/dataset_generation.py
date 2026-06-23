@@ -4,6 +4,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from openai import OpenAI
 from sqlalchemy.orm import Session
@@ -126,7 +128,20 @@ Chunk text:
 """.strip()
 
 
-def _generate_items(client: OpenAI, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
+def _parse_items(content: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return []
+        payload = json.loads(content[start:end + 1])
+    items = payload.get("items", [])
+    return items if isinstance(items, list) else []
+
+
+def _generate_items_openai(client: OpenAI, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
     response = client.chat.completions.create(
         model=model,
         temperature=0.2,
@@ -140,9 +155,35 @@ def _generate_items(client: OpenAI, model: str, chunk: dict[str, Any], examples_
         ],
     )
     content = response.choices[0].message.content or "{}"
-    payload = json.loads(content)
-    items = payload.get("items", [])
-    return items if isinstance(items, list) else []
+    return _parse_items(content)
+
+
+def _generate_items_ollama(base_url: str, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
+    prompt = (
+        "You generate expert-review draft dental Q&A from evidence chunks. "
+        "Return valid JSON only.\n\n"
+        f"{_build_prompt(chunk, examples_per_chunk)}"
+    )
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.2},
+    }
+    request = Request(
+        f"{base_url.rstrip('/')}/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=180) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except URLError as exc:
+        raise RuntimeError(f"Ollama is not reachable at {base_url}. Start Ollama and pull model '{model}'. {exc}") from exc
+    content = raw.get("response") or "{}"
+    return _parse_items(content)
 
 
 def _chunk_payload(chunk: DocumentChunk, document: Document) -> dict[str, Any]:
@@ -197,10 +238,15 @@ def generate_dataset_from_db(
     sleep_seconds: float = 0.0,
 ) -> dict[str, Any]:
     settings = get_settings()
-    if not settings.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY is required in .env.")
+    provider = settings.dataset_llm_provider.lower().strip()
+    client = None
+    if provider == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when DATASET_LLM_PROVIDER=openai.")
+        client = OpenAI(api_key=settings.openai_api_key)
+    elif provider != "ollama":
+        raise RuntimeError("DATASET_LLM_PROVIDER must be 'ollama' or 'openai'.")
 
-    client = OpenAI(api_key=settings.openai_api_key)
     already_processed = _processed_chunk_ids(OUTPUT_PATH)
     processed_chunks = 0
     generated_items = 0
@@ -223,10 +269,11 @@ def generate_dataset_from_db(
         "output_path": str(OUTPUT_PATH),
         "skipped_path": str(SKIPPED_PATH),
         "review_csv_path": str(REVIEW_CSV_PATH),
+        "provider": provider,
         "message": (
-            f"Dataset generation started for {document_name}."
+            f"Dataset generation started with {provider} for {document_name}."
             if document_name
-            else "Dataset generation started for all PDFs."
+            else f"Dataset generation started with {provider} for all PDFs."
         ),
     })
 
@@ -240,7 +287,10 @@ def generate_dataset_from_db(
                 duplicate_chunks += 1
                 continue
             try:
-                items = _generate_items(client, settings.openai_model, chunk, examples_per_chunk)
+                if provider == "ollama":
+                    items = _generate_items_ollama(settings.ollama_base_url, settings.ollama_model, chunk, examples_per_chunk)
+                else:
+                    items = _generate_items_openai(client, settings.openai_model, chunk, examples_per_chunk)
                 valid_count = 0
                 for item in items:
                     category = item.get("category")
@@ -285,6 +335,7 @@ def generate_dataset_from_db(
                 "output_path": str(OUTPUT_PATH),
                 "skipped_path": str(SKIPPED_PATH),
                 "review_csv_path": str(REVIEW_CSV_PATH),
+                "provider": provider,
                 "message": f"Processed {processed_chunks} chunks. Skipped {duplicate_chunks} chunks already in the dataset.",
             })
             if sleep_seconds:
@@ -304,6 +355,7 @@ def generate_dataset_from_db(
         "output_path": str(OUTPUT_PATH),
         "skipped_path": str(SKIPPED_PATH),
         "review_csv_path": str(REVIEW_CSV_PATH),
+        "provider": provider,
         "message": (
             f"Generated {generated_items} Q&A rows from {processed_chunks} chunks. "
             f"Skipped {duplicate_chunks} chunks already in the dataset."

@@ -30,8 +30,12 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    dataset_llm_provider: str = "ollama"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "llama3.1:8b"
 
     upload_dir: Path = Path("uploaded_docs")
+    max_upload_mb: int = 50
     chunk_size: int = 1000
     chunk_overlap: int = 180
 

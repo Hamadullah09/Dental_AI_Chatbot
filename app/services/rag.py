@@ -39,7 +39,7 @@ class RAGService:
         vector_chunks = self.vector_search(vector, candidate_limit, query_filter)
         keyword_chunks = self.keyword_search(question, candidate_limit, filters or {})
         merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
-        if not merged and filters:
+        if not merged and filters and not filters.get("document_id"):
             vector_chunks = self.vector_search(vector, candidate_limit, None)
             keyword_chunks = self.keyword_search(question, candidate_limit, {})
             merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
@@ -208,8 +208,14 @@ class RAGService:
         if conversational_answer:
             return conversational_answer, []
 
+        definition_answer = answer_basic_dental_definition(question)
+        if definition_answer:
+            return definition_answer, []
+
         chunks = self.retrieve(question, top_k=top_k, filters=filters)
         answer = self.generate_answer(question, chunks)
+        if is_insufficient_answer(answer):
+            return answer, []
         citations = dedupe_citations([chunk.citation for chunk in chunks])
         return answer, citations
 
@@ -305,6 +311,29 @@ def answer_conversational_prompt(question: str) -> str | None:
     return None
 
 
+def answer_basic_dental_definition(question: str) -> str | None:
+    normalized = re.sub(r"[^a-zA-Z0-9\s?]", " ", question.lower()).strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    definition_patterns = ("what is", "define", "meaning of", "what do you mean by")
+    if not any(normalized.startswith(pattern) for pattern in definition_patterns):
+        return None
+
+    if "oral health" in normalized:
+        return (
+            "Oral health means the health of the mouth, teeth, gums, and related oral tissues. "
+            "It includes being free from problems such as tooth decay, gum disease, oral infections, pain, sores, "
+            "and conditions that affect eating, speaking, smiling, or quality of life.\n\n"
+            "Good oral health is supported by brushing with fluoride toothpaste, cleaning between teeth, limiting sugary foods and drinks, "
+            "avoiding tobacco, and getting regular dental checkups."
+        )
+    return None
+
+
+def is_insufficient_answer(answer: str) -> bool:
+    normalized = answer.lower()
+    return "i do not have enough relevant evidence" in normalized or "no relevant context was retrieved" in normalized
+
+
 def question_keywords(question: str) -> set[str]:
     stopwords = {
         "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how",
@@ -353,6 +382,10 @@ def build_qdrant_filter(filters: dict | None) -> qmodels.Filter | None:
     min_year = filters.get("min_year")
     if min_year:
         must.append(qmodels.FieldCondition(key="year", range=qmodels.Range(gte=float(min_year))))
+
+    document_id = filters.get("document_id")
+    if document_id:
+        must.append(qmodels.FieldCondition(key="document_id", match=qmodels.MatchValue(value=document_id)))
 
     if not must:
         return None

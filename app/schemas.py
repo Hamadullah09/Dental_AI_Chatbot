@@ -45,6 +45,7 @@ class SourceCitation(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     session_id: str | None = None
+    document_id: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=12)
     document_types: list[DocumentType] | None = None
     trust_levels: list[TrustLevel] | None = None
@@ -93,6 +94,21 @@ class DocumentRead(BaseModel):
     status: DocumentStatus
     chunk_count: int
     error_message: str | None
+    ingestion_progress: int = 0
+    ingestion_step: str | None = None
+    ocr_used: bool = False
+    ingestion_started_at: datetime | None = None
+    ingestion_completed_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentIngestionLogRead(BaseModel):
+    id: str
+    document_id: str
+    level: str
+    message: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -118,6 +134,7 @@ class DatasetGenerationStatus(BaseModel):
     output_path: str
     skipped_path: str
     review_csv_path: str | None = None
+    provider: str | None = None
     message: str | None = None
     updated_at: str | None = None
 

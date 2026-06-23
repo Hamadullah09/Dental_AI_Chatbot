@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
 from app.deps import require_admin
-from app.models import Document, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
-from app.schemas import DatasetGenerationRequest, DatasetGenerationStatus, DocumentRead
+from app.models import Document, DocumentIngestionLog, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
+from app.schemas import DatasetGenerationRequest, DatasetGenerationStatus, DocumentIngestionLogRead, DocumentRead
 from app.services.dataset_generation import REVIEW_CSV_PATH, export_review_csv, generate_dataset_background, read_dataset_status
 from app.services.documents import save_upload
 from app.services.ingestion import IngestionService
@@ -64,6 +64,7 @@ def generate_dataset(
         "output_path": "draft_dental_qa.jsonl",
         "skipped_path": "skipped_chunks.jsonl",
         "review_csv_path": "Database Q&A.csv",
+        "provider": "ollama",
         "message": "Dataset generation queued. Status will update as chunks are processed.",
     }
 
@@ -91,6 +92,24 @@ def list_documents(
     _: User = Depends(require_admin),
 ) -> list[Document]:
     return db.query(Document).order_by(Document.created_at.desc()).all()
+
+
+@router.get("/documents/{document_id}/logs", response_model=list[DocumentIngestionLogRead])
+def list_document_ingestion_logs(
+    document_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> list[DocumentIngestionLog]:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return (
+        db.query(DocumentIngestionLog)
+        .filter(DocumentIngestionLog.document_id == document_id)
+        .order_by(DocumentIngestionLog.created_at.desc())
+        .limit(100)
+        .all()
+    )
 
 
 @router.post("/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
@@ -125,6 +144,9 @@ def upload_document(
             review_status=review_status,
         )
         document.status = DocumentStatus.processing
+        document.ingestion_progress = 0
+        document.ingestion_step = "Queued"
+        document.error_message = None
         db.commit()
         db.refresh(document)
         background_tasks.add_task(ingest_document_background, document.id)
@@ -148,6 +170,9 @@ def reingest_document(
     try:
         document.status = DocumentStatus.processing
         document.error_message = None
+        document.ingestion_progress = 0
+        document.ingestion_step = "Queued"
+        document.ingestion_completed_at = None
         db.commit()
         db.refresh(document)
         background_tasks.add_task(ingest_document_background, document.id)

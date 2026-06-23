@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
-import { Paperclip, Mic, ArrowUp, X, FileText, ImageIcon } from "lucide-react";
+import { Paperclip, Mic, ArrowUp, X, FileText, ImageIcon, Square } from "lucide-react";
 
 interface ChatInputProps {
   value: string;
@@ -12,6 +12,8 @@ interface ChatInputProps {
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   attachment: File | null;
   onRemoveAttachment: () => void;
+  isListening: boolean;
+  onToggleVoice: () => void;
 }
 
 export function ChatInput({
@@ -23,6 +25,8 @@ export function ChatInput({
   onFileChange,
   attachment,
   onRemoveAttachment,
+  isListening,
+  onToggleVoice,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -77,7 +81,7 @@ export function ChatInput({
             ref={fileInputRef}
             onChange={onFileChange}
             className="hidden"
-            accept="image/*,application/pdf,application/msword,text/plain"
+            accept="application/pdf"
           />
 
           {/* Plus/Clip attachment icon */}
@@ -106,14 +110,35 @@ export function ChatInput({
             />
           </div>
 
-          {/* Microphone Icon */}
-          <button
-            type="button"
-            className="p-3 text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-full transition-colors flex-shrink-0 hidden sm:block"
-            title="Voice message (Placeholder)"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
+          {/* Voice Input */}
+          <div className="relative hidden sm:flex items-center justify-center flex-shrink-0">
+            {isListening && (
+              <>
+                <span className="absolute h-12 w-12 rounded-full bg-red-400/20 animate-ping" />
+                <span className="absolute h-10 w-10 rounded-full border border-red-300/50" />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={onToggleVoice}
+              aria-pressed={isListening}
+              className={`relative z-10 h-11 min-w-11 px-3 rounded-full transition-all flex items-center justify-center gap-2 border shadow-sm ${
+                isListening
+                  ? "bg-red-500 text-white border-red-400 shadow-red-500/20"
+                  : "bg-dental-card text-dental-textSecondary hover:text-dental-textPrimary hover:border-dental-accent border-dental-border"
+              }`}
+              title={isListening ? "Stop listening" : "Voice to text"}
+            >
+              {isListening ? (
+                <>
+                  <Square className="w-4 h-4 fill-current" />
+                  <span className="text-[11px] font-bold pr-1">Stop</span>
+                </>
+              ) : (
+                <Mic className="w-5 h-5" />
+              )}
+            </button>
+          </div>
 
           {/* Send Button */}
           <button

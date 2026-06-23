@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { Download, FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
+import { Download, FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles, Wand2, ScrollText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
@@ -9,6 +9,7 @@ import {
   deleteDocument,
   downloadDatasetReviewCsv,
   generateDataset,
+  getDocumentIngestionLogs,
   getDatasetGenerationStatus,
   getDocuments,
   isInvalidTokenError,
@@ -16,12 +17,14 @@ import {
   uploadDocument
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { DatasetGenerationStatus, DocumentItem } from "@/lib/types";
+import type { DatasetGenerationStatus, DocumentIngestionLog, DocumentItem } from "@/lib/types";
 
 export default function AdminPage() {
   const router = useRouter();
   const { token, logout } = useAuth();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [openLogDocumentId, setOpenLogDocumentId] = useState<string | null>(null);
+  const [logsByDocument, setLogsByDocument] = useState<Record<string, DocumentIngestionLog[]>>({});
   const [file, setFile] = useState<File | null>(null);
   const [bookTitle, setBookTitle] = useState("");
   const [authorOrSource, setAuthorOrSource] = useState("");
@@ -51,11 +54,24 @@ export default function AdminPage() {
   }, [logout, router]);
 
   const loadDocuments = useCallback(async () => {
-    if (!token) return;
+    if (!token) return [];
     try {
-      setDocuments(await getDocuments(token));
+      const nextDocuments = await getDocuments(token);
+      setDocuments(nextDocuments);
+      return nextDocuments;
     } catch (error) {
       setStatus(handleError(error, "Could not load documents"));
+      return [];
+    }
+  }, [handleError, token]);
+
+  const loadDocumentLogs = useCallback(async (documentId: string) => {
+    if (!token) return;
+    try {
+      const logs = await getDocumentIngestionLogs(documentId, token);
+      setLogsByDocument((current) => ({ ...current, [documentId]: logs }));
+    } catch (error) {
+      setStatus(handleError(error, "Could not load ingestion logs"));
     }
   }, [handleError, token]);
 
@@ -88,12 +104,26 @@ export default function AdminPage() {
     let attempts = 0;
     const timer = window.setInterval(async () => {
       attempts += 1;
-      await loadDocuments();
-      if (attempts >= 20) {
+      const nextDocuments = await loadDocuments();
+      if (openLogDocumentId) {
+        await loadDocumentLogs(openLogDocumentId);
+      }
+      const stillProcessing = nextDocuments.some((doc) => doc.status === "processing");
+      if (!stillProcessing || attempts >= 240) {
         window.clearInterval(timer);
-        setStatus("Refresh documents to check final ingestion status.");
+        if (attempts >= 240) {
+          setStatus("Refresh documents to check final ingestion status.");
+        }
       }
     }, 3000);
+  }
+
+  async function toggleLogs(documentId: string) {
+    const nextDocumentId = openLogDocumentId === documentId ? null : documentId;
+    setOpenLogDocumentId(nextDocumentId);
+    if (nextDocumentId) {
+      await loadDocumentLogs(nextDocumentId);
+    }
   }
 
   async function onUpload() {
@@ -411,52 +441,101 @@ export default function AdminPage() {
                 } else if (doc.status === "failed") {
                   statusColor = "bg-red-500/10 text-red-400 border-red-500/20";
                 }
+                const progress = Math.max(0, Math.min(doc.ingestion_progress || 0, 100));
+                const logs = logsByDocument[doc.id] || [];
+                const isLogsOpen = openLogDocumentId === doc.id;
 
                 return (
-                  <div className="p-4 bg-dental-darkBg border border-dental-border rounded-xl space-y-3 flex flex-col md:flex-row justify-between md:items-center gap-3" key={doc.id}>
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <strong className="text-xs text-dental-textPrimary truncate max-w-[320px] md:max-w-[480px]">{doc.title || doc.original_filename}</strong>
-                        <span className={`px-2 py-0.5 border rounded-full text-[9px] uppercase font-bold tracking-wide ${statusColor}`}>
-                          {doc.status}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-dental-textSecondary">
-                        {doc.chunk_count} chunks · Uploaded: {new Date(doc.created_at).toLocaleString()}
-                      </p>
-                      <p className="text-[10px] text-dental-textSecondary leading-normal">
-                        {doc.author_or_source || "Unknown publisher"}
-                        {doc.publication_year ? ` · ${doc.publication_year}` : ""}
-                        {doc.edition ? ` · ${doc.edition}` : ""}
-                        {" · "}{doc.document_type.replace("_", " ")}
-                        {" · "}{doc.trust_level} trust
-                        {" · "}{doc.review_status} review status
-                        {doc.language ? ` · ${doc.language}` : ""}
-                      </p>
-                      {doc.error_message && (
-                        <p className="text-[10px] text-red-400 flex items-center gap-1.5 mt-1 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
-                          <ShieldAlert size={12} className="shrink-0" />
-                          <span>Error: {doc.error_message}</span>
+                  <div className="p-4 bg-dental-darkBg border border-dental-border rounded-xl space-y-3" key={doc.id}>
+                    <div className="flex flex-col md:flex-row justify-between md:items-center gap-3">
+                      <div className="space-y-2 min-w-0">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <strong className="text-xs text-dental-textPrimary truncate max-w-[320px] md:max-w-[480px]">{doc.title || doc.original_filename}</strong>
+                          <span className={`px-2 py-0.5 border rounded-full text-[9px] uppercase font-bold tracking-wide ${statusColor}`}>
+                            {doc.status}
+                          </span>
+                          {doc.ocr_used && (
+                            <span className="px-2 py-0.5 border rounded-full text-[9px] uppercase font-bold tracking-wide bg-sky-500/10 text-sky-300 border-sky-500/20">
+                              OCR
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-dental-textSecondary">
+                          {doc.chunk_count} chunks · Uploaded: {new Date(doc.created_at).toLocaleString()}
                         </p>
-                      )}
+                        <p className="text-[10px] text-dental-textSecondary leading-normal">
+                          {doc.author_or_source || "Unknown publisher"}
+                          {doc.publication_year ? ` · ${doc.publication_year}` : ""}
+                          {doc.edition ? ` · ${doc.edition}` : ""}
+                          {" · "}{doc.document_type.replace("_", " ")}
+                          {" · "}{doc.trust_level} trust
+                          {" · "}{doc.review_status} review status
+                          {doc.language ? ` · ${doc.language}` : ""}
+                        </p>
+                      </div>
+                      
+                      <div className="flex gap-2 shrink-0 md:self-center">
+                        <button
+                          onClick={() => toggleLogs(doc.id)}
+                          className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-dental-border border border-dental-border hover:bg-dental-card text-dental-textPrimary rounded-lg text-[10px] font-semibold transition-colors"
+                        >
+                          <ScrollText size={12} />
+                          Logs
+                        </button>
+                        <button 
+                          onClick={() => onReingest(doc.id)}
+                          disabled={doc.status === "processing"}
+                          className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-dental-border border border-dental-border hover:bg-dental-card text-dental-textPrimary rounded-lg text-[10px] font-semibold transition-colors disabled:opacity-40"
+                        >
+                          <RefreshCw size={12} />
+                          Re-ingest
+                        </button>
+                        <button 
+                          onClick={() => onDelete(doc.id)}
+                          className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-[10px] font-bold transition-colors"
+                        >
+                          <Trash2 size={12} />
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    
-                    <div className="flex gap-2 shrink-0 md:self-center">
-                      <button 
-                        onClick={() => onReingest(doc.id)}
-                        className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-dental-border border border-dental-border hover:bg-dental-card text-dental-textPrimary rounded-lg text-[10px] font-semibold transition-colors"
-                      >
-                        <RefreshCw size={12} />
-                        Re-ingest
-                      </button>
-                      <button 
-                        onClick={() => onDelete(doc.id)}
-                        className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-[10px] font-bold transition-colors"
-                      >
-                        <Trash2 size={12} />
-                        Delete
-                      </button>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-[10px] text-dental-textSecondary">
+                        <span className="truncate">{doc.ingestion_step || (doc.status === "ready" ? "Ready" : "Waiting")}</span>
+                        <span className="font-semibold text-dental-textPrimary">{progress}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-dental-border overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${doc.status === "failed" ? "bg-red-400" : "bg-dental-accent"}`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
                     </div>
+
+                    {doc.error_message && (
+                      <p className="text-[10px] text-red-400 flex items-center gap-1.5 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
+                        <ShieldAlert size={12} className="shrink-0" />
+                        <span>Error: {doc.error_message}</span>
+                      </p>
+                    )}
+
+                    {isLogsOpen && (
+                      <div className="border border-dental-border rounded-xl bg-dental-card/40 p-3 space-y-2 max-h-56 overflow-y-auto">
+                        {logs.length ? logs.map((log) => {
+                          const logColor = log.level === "error" ? "text-red-400" : log.level === "warning" ? "text-amber-300" : "text-dental-textSecondary";
+                          return (
+                            <div key={log.id} className="text-[10px] leading-relaxed">
+                              <span className="text-dental-textSecondary">{new Date(log.created_at).toLocaleString()}</span>
+                              <span className={`ml-2 uppercase font-bold ${logColor}`}>{log.level}</span>
+                              <span className="ml-2 text-dental-textPrimary">{log.message}</span>
+                            </div>
+                          );
+                        }) : (
+                          <p className="text-[10px] text-dental-textSecondary italic">No ingestion logs yet.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               }) : (

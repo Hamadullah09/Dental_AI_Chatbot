@@ -63,6 +63,19 @@ export type DocumentItem = {
   status: "uploaded" | "processing" | "ready" | "failed";
   chunk_count: number;
   error_message: string | null;
+  ingestion_progress: number;
+  ingestion_step: string | null;
+  ocr_used: boolean;
+  ingestion_started_at: string | null;
+  ingestion_completed_at: string | null;
+  created_at: string;
+};
+
+export type DocumentIngestionLog = {
+  id: string;
+  document_id: string;
+  level: "info" | "warning" | "error" | string;
+  message: string;
   created_at: string;
 };
 
@@ -78,6 +91,7 @@ export type DatasetGenerationStatus = {
   output_path: string;
   skipped_path: string;
   review_csv_path?: string | null;
+  provider?: string | null;
   message: string | null;
   updated_at?: string | null;
 };

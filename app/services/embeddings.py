@@ -2,7 +2,6 @@ import hashlib
 from functools import lru_cache
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from app.core.config import get_settings
 
@@ -41,6 +40,8 @@ class HashingEmbeddingModel:
 def get_embedding_model():
     settings = get_settings()
     try:
+        from sentence_transformers import SentenceTransformer
+
         return SentenceTransformer(settings.embedding_model_name)
     except Exception:
         return HashingEmbeddingModel()

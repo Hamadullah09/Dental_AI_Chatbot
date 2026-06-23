@@ -52,6 +52,11 @@ def ensure_lightweight_columns() -> None:
         "specialty": "VARCHAR(255)",
         "language": "VARCHAR(100)",
         "file_hash": "VARCHAR(64)",
+        "ingestion_progress": "INTEGER DEFAULT 0 NOT NULL",
+        "ingestion_step": "VARCHAR(255)",
+        "ocr_used": "BOOLEAN DEFAULT 0 NOT NULL",
+        "ingestion_started_at": "DATETIME",
+        "ingestion_completed_at": "DATETIME",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")} if "document_chunks" in inspector.get_table_names() else set()
     chunk_additions = {

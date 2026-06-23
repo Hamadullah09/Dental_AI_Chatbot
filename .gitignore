@@ -17,5 +17,6 @@ dental_qa.jsonl
 
 .venv/
 .venv_run/
+.run_venv/
 dataset_generation_status.json
 skipped_chunks_invalid_model_archive.jsonl

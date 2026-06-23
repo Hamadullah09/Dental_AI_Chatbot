@@ -1,17 +1,30 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import ChatSession, Feedback, Message, MessageRole, User
-from app.schemas import ChatRequest, ChatResponse, ChatSessionRead, FeedbackCreate, FeedbackRead, MessageRead
+from app.models import ChatSession, Document, DocumentStatus, DocumentType, Feedback, Message, MessageRole, ReviewStatus, TrustLevel, User
+from app.schemas import ChatRequest, ChatResponse, ChatSessionRead, DocumentRead, FeedbackCreate, FeedbackRead, MessageRead
+from app.services.documents import save_upload
+from app.services.ingestion import IngestionService
 from app.services.rag import RAGService
 
 
 router = APIRouter(tags=["chat"])
+
+
+def ingest_user_document_background(document_id: str) -> None:
+    with SessionLocal() as db:
+        document = db.get(Document, document_id)
+        if not document:
+            return
+        try:
+            IngestionService().ingest_document(db, document)
+        except Exception:
+            return
 
 
 def _sources_to_json(sources: list) -> str:
@@ -48,6 +61,14 @@ def chat(
         db.commit()
         db.refresh(session)
 
+    document = None
+    if payload.document_id:
+        document = db.get(Document, payload.document_id)
+        if not document or document.uploaded_by != current_user.id:
+            raise HTTPException(status_code=404, detail="Uploaded document not found")
+        if document.status != DocumentStatus.ready:
+            raise HTTPException(status_code=409, detail="Document is still being processed. Please try again when ingestion is ready.")
+
     db.add(Message(session_id=session.id, role=MessageRole.user, content=question))
     service = RAGService()
     answer, sources = service.answer(
@@ -59,6 +80,7 @@ def chat(
             "review_status": payload.review_status.value if payload.review_status else None,
             "min_year": payload.min_year,
             "user_role": current_user.role.value,
+            "document_id": document.id if document else None,
         },
     )
     assistant_message = Message(
@@ -78,6 +100,49 @@ def chat(
         sources=sources,
         disclaimer=get_settings().medical_disclaimer,
     )
+
+
+@router.post("/chat/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+def upload_chat_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    book_title: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Document:
+    try:
+        document = save_upload(
+            db,
+            file,
+            current_user,
+            book_title=book_title,
+            document_type=DocumentType.other,
+            trust_level=TrustLevel.medium,
+            review_status=ReviewStatus.approved,
+        )
+        document.status = DocumentStatus.processing
+        document.ingestion_progress = 0
+        document.ingestion_step = "Queued"
+        db.commit()
+        db.refresh(document)
+        background_tasks.add_task(ingest_user_document_background, document.id)
+        return document
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {exc}")
+
+
+@router.get("/chat/documents/{document_id}", response_model=DocumentRead)
+def get_chat_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Document:
+    document = db.get(Document, document_id)
+    if not document or document.uploaded_by != current_user.id:
+        raise HTTPException(status_code=404, detail="Uploaded document not found")
+    return document
 
 
 @router.get("/chat/sessions", response_model=list[ChatSessionRead])

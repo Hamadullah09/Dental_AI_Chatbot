@@ -6,9 +6,9 @@ import { AppShell, useModal } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
 import { ChatWindow } from "@/components/ChatWindow";
 import { ChatInput } from "@/components/ChatInput";
-import { sendChat } from "@/lib/api";
+import { getChatDocument, sendChat, uploadChatDocument } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Message } from "@/lib/types";
+import type { DocumentItem, Message } from "@/lib/types";
 
 function ChatContent() {
   const { token } = useAuth();
@@ -24,10 +24,13 @@ function ChatContent() {
   const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [activeDocument, setActiveDocument] = useState<DocumentItem | null>(null);
+  const [isListening, setIsListening] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -119,21 +122,33 @@ function ChatContent() {
     }, 2000);
   }
 
+  async function waitForDocumentReady(documentId: string) {
+    if (!token) throw new Error("Please sign in again.");
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const doc = await getChatDocument(documentId, token);
+      setActiveDocument(doc);
+      setStatus(`${doc.ingestion_step || "Processing PDF"} (${doc.ingestion_progress || 0}%)`);
+      if (doc.status === "ready") return doc;
+      if (doc.status === "failed") {
+        throw new Error(doc.error_message || "Document ingestion failed.");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+    throw new Error("Document is still processing. Please try again shortly.");
+  }
+
   // Handle regular chat form submissions
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    
-    if (attachment) {
-      await submitSimulatedAttachment(attachment, question);
-      return;
-    }
 
-    if (!token || !question.trim()) return;
+    if (!token || (!question.trim() && !attachment)) return;
+    let scopedDocument = activeDocument;
+    const prompt = question.trim() || "Summarize this uploaded dental document and answer using only this document.";
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: question.trim(),
+      content: attachment ? `Attached PDF: ${attachment.name}\n\n${prompt}` : prompt,
       sources: [],
       created_at: new Date().toISOString()
     };
@@ -141,10 +156,21 @@ function ChatContent() {
     setMessages((current) => [...current, userMessage]);
     setQuestion("");
     setIsLoading(true);
-    setStatus("Retrieving dental context...");
 
     try {
-      const response = await sendChat({ question: userMessage.content, session_id: sessionId }, token);
+      if (attachment) {
+        setStatus("Uploading PDF for grounded chat...");
+        const uploaded = await uploadChatDocument(attachment, token);
+        setAttachment(null);
+        scopedDocument = await waitForDocumentReady(uploaded.id);
+      }
+
+      setStatus(scopedDocument ? `Retrieving context from ${scopedDocument.title || scopedDocument.original_filename}...` : "Retrieving dental context...");
+      const response = await sendChat({
+        question: prompt,
+        session_id: sessionId,
+        document_id: scopedDocument?.id || null
+      }, token);
       
       // If we created a new session, update search params to sync the URL
       if (!sessionId && response.session_id) {
@@ -210,9 +236,53 @@ function ChatContent() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setAttachment(e.target.files[0]);
+      const nextFile = e.target.files[0];
+      if (nextFile.type !== "application/pdf" && !nextFile.name.toLowerCase().endsWith(".pdf")) {
+        setStatus("Please upload a PDF file.");
+        return;
+      }
+      setAttachment(nextFile);
     }
   };
+
+  function toggleVoiceInput() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatus("Voice input is not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onstart = () => {
+      setIsListening(true);
+      setStatus("Listening...");
+    };
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0]?.transcript || "")
+        .join(" ")
+        .trim();
+      if (transcript) {
+        setQuestion(transcript);
+      }
+    };
+    recognition.onerror = () => {
+      setStatus("Could not access microphone. Please allow microphone permission.");
+      setIsListening(false);
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      setStatus("Voice converted to text.");
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
 
   return (
     <section className="flex-1 flex flex-col h-full overflow-hidden bg-dental-darkBg relative">
@@ -238,7 +308,26 @@ function ChatContent() {
         onFileChange={handleFileChange}
         attachment={attachment}
         onRemoveAttachment={() => setAttachment(null)}
+        isListening={isListening}
+        onToggleVoice={toggleVoiceInput}
       />
+
+      {isListening && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-[min(92vw,420px)] rounded-2xl border border-red-400/30 bg-dental-card/95 px-5 py-4 shadow-2xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative h-11 w-11 rounded-full bg-red-500 flex items-center justify-center text-white">
+              <span className="absolute h-11 w-11 rounded-full bg-red-400/30 animate-ping" />
+              <span className="relative h-3 w-3 rounded-full bg-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-dental-textPrimary">Listening</p>
+              <p className="text-[11px] text-dental-textSecondary truncate">
+                Speak now. Tap the mic control again to stop.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating status bar */}
       {status && (
