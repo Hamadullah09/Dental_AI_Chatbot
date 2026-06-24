@@ -15,10 +15,12 @@ export type AuthResponse = {
 };
 
 export type SourceCitation = {
+  source_type?: "pdf" | "web" | string;
   document_id: string | null;
   document_name: string;
   page_number: number | null;
   chunk_index: number | null;
+  url?: string | null;
   score: number | null;
 };
 

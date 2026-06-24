@@ -63,7 +63,12 @@ export function login(input: { email: string; password: string }) {
   });
 }
 
-export function sendChat(input: { question: string; session_id?: string | null; document_id?: string | null }, token: string) {
+export function sendChat(input: {
+  question: string;
+  session_id?: string | null;
+  document_id?: string | null;
+  search_web?: boolean;
+}, token: string) {
   return request<ChatResponse>("/chat", {
     method: "POST",
     token,

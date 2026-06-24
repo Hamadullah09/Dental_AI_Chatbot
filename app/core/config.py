@@ -27,9 +27,19 @@ class Settings(BaseSettings):
     qdrant_collection: str = "dental_docs"
     embedding_model_name: str = "all-MiniLM-L6-v2"
     retrieval_top_k: int = 5
+    web_search_provider: str = "tavily"
+    tavily_api_key: str | None = None
+    brave_search_api_key: str | None = None
+    google_search_api_key: str | None = None
+    google_search_engine_id: str | None = None
+    web_search_max_results: int = 5
+    web_search_trusted_domains: str = (
+        "who.int,cdc.gov,nih.gov,ncbi.nlm.nih.gov,nhs.uk,ada.org,nice.org.uk,fda.gov"
+    )
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    openai_model_fallbacks: str = "gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo"
     dataset_llm_provider: str = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.1:8b"
@@ -49,6 +59,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @property
+    def web_search_domain_list(self) -> list[str]:
+        return [item.strip() for item in self.web_search_trusted_domains.split(",") if item.strip()]
 
 
 @lru_cache

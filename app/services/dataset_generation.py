@@ -141,21 +141,47 @@ def _parse_items(content: str) -> list[dict[str, Any]]:
     return items if isinstance(items, list) else []
 
 
-def _generate_items_openai(client: OpenAI, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You generate expert-review draft dental Q&A from evidence chunks. Return valid JSON only.",
-            },
-            {"role": "user", "content": _build_prompt(chunk, examples_per_chunk)},
-        ],
-    )
-    content = response.choices[0].message.content or "{}"
-    return _parse_items(content)
+def _generate_items_openai(
+    client: OpenAI,
+    models: list[str],
+    chunk: dict[str, Any],
+    examples_per_chunk: int,
+) -> list[dict[str, Any]]:
+    last_error: Exception | None = None
+    for model in models:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                temperature=0.2,
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You generate expert-review draft dental Q&A from evidence chunks. Return valid JSON only.",
+                    },
+                    {"role": "user", "content": _build_prompt(chunk, examples_per_chunk)},
+                ],
+            )
+            content = response.choices[0].message.content or "{}"
+            return _parse_items(content)
+        except Exception as exc:
+            last_error = exc
+            message = str(exc).lower()
+            if "invalid model" in message or "model_not_found" in message or "does not exist" in message:
+                continue
+            raise
+    raise RuntimeError(f"No configured OpenAI model worked. Last error: {last_error}")
+
+
+def _openai_model_candidates(primary: str, fallback_csv: str) -> list[str]:
+    seen: set[str] = set()
+    models: list[str] = []
+    for model in [primary, *fallback_csv.split(",")]:
+        model = model.strip()
+        if model and model not in seen:
+            seen.add(model)
+            models.append(model)
+    return models
 
 
 def _generate_items_ollama(base_url: str, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
@@ -244,8 +270,11 @@ def generate_dataset_from_db(
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when DATASET_LLM_PROVIDER=openai.")
         client = OpenAI(api_key=settings.openai_api_key)
+        openai_models = _openai_model_candidates(settings.openai_model, settings.openai_model_fallbacks)
     elif provider != "ollama":
         raise RuntimeError("DATASET_LLM_PROVIDER must be 'ollama' or 'openai'.")
+    else:
+        openai_models = []
 
     already_processed = _processed_chunk_ids(OUTPUT_PATH)
     processed_chunks = 0
@@ -290,7 +319,7 @@ def generate_dataset_from_db(
                 if provider == "ollama":
                     items = _generate_items_ollama(settings.ollama_base_url, settings.ollama_model, chunk, examples_per_chunk)
                 else:
-                    items = _generate_items_openai(client, settings.openai_model, chunk, examples_per_chunk)
+                    items = _generate_items_openai(client, openai_models, chunk, examples_per_chunk)
                 valid_count = 0
                 for item in items:
                     category = item.get("category")

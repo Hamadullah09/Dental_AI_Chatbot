@@ -26,6 +26,7 @@ function ChatContent() {
   const [attachment, setAttachment] = useState<File | null>(null);
   const [activeDocument, setActiveDocument] = useState<DocumentItem | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [searchWeb, setSearchWeb] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatWindowRef = useRef<HTMLDivElement>(null);
@@ -169,7 +170,8 @@ function ChatContent() {
       const response = await sendChat({
         question: prompt,
         session_id: sessionId,
-        document_id: scopedDocument?.id || null
+        document_id: scopedDocument?.id || null,
+        search_web: searchWeb
       }, token);
       
       // If we created a new session, update search params to sync the URL
@@ -310,6 +312,8 @@ function ChatContent() {
         onRemoveAttachment={() => setAttachment(null)}
         isListening={isListening}
         onToggleVoice={toggleVoiceInput}
+        searchWeb={searchWeb}
+        onToggleSearchWeb={() => setSearchWeb((current) => !current)}
       />
 
       {isListening && (

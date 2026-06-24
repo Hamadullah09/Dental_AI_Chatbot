@@ -8,15 +8,20 @@ Dental AI is educational clinical decision support. It does not replace diagnosi
 
 - Register and login with JWT authentication.
 - Roles: `admin`, `dentist`, `student`, and `patient`.
-- Admin PDF upload, document list, delete, and re-ingest.
+- Admin PDF upload, document list, delete, re-ingest, ingestion progress, and ingestion logs.
+- Production-grade ingestion guardrails: PDF validation, file size checks, encrypted/empty PDF rejection, background processing, and optional OCR fallback.
 - PDF parsing with page numbers, chunk indexes, document metadata, and Qdrant point IDs.
 - Qdrant vector retrieval with configurable top-k, metadata filtering, hybrid keyword/vector retrieval, reranking, and context compression.
-- RAG answers grounded in retrieved dental context.
+- RAG answers grounded in retrieved dental context, with optional trusted web search only when the chat web-search toggle is enabled.
+- Trusted web search through Tavily, Brave, or Google Custom Search configuration, filtered to approved clinical domains.
+- Chat document upload for user-scoped PDF questions.
+- Voice input in the chat composer through browser microphone speech recognition.
+- Dataset Q&A generation from chunks with duplicate-skip logic and CSV export for expert review.
 - Citations include document name, page number, chunk index, and score.
 - Chat sessions, messages, document records, chunks, and feedback persisted in SQL.
 - PostgreSQL and Qdrant via Docker Compose.
 - React/Next.js frontend with separate pages for sign in, registration, chat, history, and admin document management.
-- ChatGPT-style chat workspace with persistent light/dark theme.
+- ChatGPT-style chat workspace with persistent light/dark theme, source chips, feedback controls, attachment upload, voice input, and web-search toggle.
 - Pytest coverage for auth, chat history, feedback, admin upload, and ingestion metadata.
 - No hard-coded secrets. Use `.env`.
 
@@ -32,6 +37,7 @@ flowchart LR
   ING --> QD["Qdrant vector store"]
   RAG --> QD
   RAG --> LLM["OpenAI or extractive fallback"]
+  RAG --> WEB["Optional trusted web search"]
 ```
 
 ## Quick Start With Docker
@@ -49,6 +55,17 @@ Required for production-like use:
 ```bash
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 OPENAI_API_KEY=your-openai-api-key
+DATASET_LLM_PROVIDER=openai
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
+```
+
+For Docker Compose, use the container services:
+
+```bash
+DATABASE_URL=postgresql+psycopg://dental:dental_password@postgres:5432/dental_ai
+QDRANT_URL=http://qdrant:6333
+QDRANT_LOCAL_PATH=
 ```
 
 `JWT_SECRET_KEY` is not provided by OpenAI, Qdrant, or PostgreSQL. It is your own private random signing secret used by the backend to create and verify login tokens. Generate one locally:
@@ -60,6 +77,16 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 Keep this value only in `.env`. Never commit it to GitHub.
 
 For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
+
+Optional trusted web search:
+
+```bash
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your-tavily-api-key
+WEB_SEARCH_TRUSTED_DOMAINS=who.int,cdc.gov,nih.gov,ncbi.nlm.nih.gov,nhs.uk,ada.org,nice.org.uk,fda.gov
+```
+
+Web search does not run automatically. The chat UI sends online search requests only when the user enables the web-search toggle. With the toggle off, the chatbot uses local uploaded/PDF knowledge only and says when it does not have enough evidence.
 
 3. Start the stack.
 
@@ -85,7 +112,7 @@ http://localhost:8000
 
 ## Local Development Setup
 
-Run the backend:
+Run the backend on macOS/Linux:
 
 ```bash
 python -m venv .venv
@@ -95,25 +122,39 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
+Run the backend on Windows with the existing local environment:
+
+```powershell
+.\.run_venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8002
+```
+
 For local non-Docker development, set:
 
 ```bash
 DATABASE_URL=sqlite:///./dental_ai.db
-QDRANT_URL=http://localhost:6333
+QDRANT_URL=
+QDRANT_LOCAL_PATH=qdrant_storage
 ```
 
-Run the frontend in another terminal:
+Run the frontend in another terminal on Windows:
 
-```bash
+```powershell
 cd frontend
 npm install
-npm run dev
+$env:NEXT_PUBLIC_API_URL="http://127.0.0.1:8002"
+npm run dev -- -p 3001
 ```
 
 Then open:
 
 ```text
-http://localhost:3000
+http://127.0.0.1:3001
+```
+
+If port `8002` is already in use on Windows, stop the old backend process first:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8002 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
 ## Offline Ingestion
@@ -142,6 +183,19 @@ The script stores document and chunk metadata in SQL and vectors in Qdrant. Each
 - `source`
 - `page_number`
 - `chunk_index`
+
+## Dataset Q&A Generation
+
+The admin workflow can generate Q&A rows from ingested chunks using the configured dataset provider. For paid OpenAI generation, set:
+
+```bash
+DATASET_LLM_PROVIDER=openai
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
+```
+
+Already-generated chunks are skipped so repeated clicks do not duplicate rows. The admin UI can download the expert-review file as `Database Q&A.csv`.
 
 ## RAG Quality Evaluation
 
@@ -183,6 +237,8 @@ Chat:
 
 - `POST /api/chat`
 - `GET /api/chat/sessions`
+- `POST /api/chat/documents`
+- `GET /api/chat/documents/{document_id}`
 - `POST /api/feedback`
 
 Admin:
@@ -191,6 +247,9 @@ Admin:
 - `POST /api/admin/documents`
 - `POST /api/admin/documents/{document_id}/reingest`
 - `DELETE /api/admin/documents/{document_id}`
+- `GET /api/admin/documents/{document_id}/logs`
+- `POST /api/admin/dataset/generate`
+- `GET /api/admin/dataset/download`
 
 Health:
 
@@ -230,7 +289,7 @@ Tests mock external RAG and ingestion calls where needed, so they do not require
 app/
   core/          configuration, database, security
   routers/       auth, chat, admin, health APIs
-  services/      RAG, ingestion, upload storage
+  services/      RAG, ingestion, upload storage, dataset generation, web search
   main.py        FastAPI application
 frontend/        React/Next.js frontend
 static/          legacy FastAPI-served fallback page
@@ -243,9 +302,7 @@ docs/            developer notes and roadmap
 ## Remaining Roadmap
 
 - Alembic migrations instead of `create_all`.
-- Background ingestion jobs with progress events.
-- Rate limiting and audit logs.
-- Better admin dashboard with ingestion failure diagnostics.
+- Rate limiting and stronger audit log retention.
 - Larger expert-reviewed evaluation dataset for dental factuality and citation quality.
 - PHI redaction, consent flows, retention policies, and deployment hardening.
 - Streaming chat responses.

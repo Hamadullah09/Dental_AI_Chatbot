@@ -35,10 +35,12 @@ class LoginRequest(BaseModel):
 
 
 class SourceCitation(BaseModel):
+    source_type: str = "pdf"
     document_id: str | None = None
     document_name: str
     page_number: int | None = None
     chunk_index: int | None = None
+    url: str | None = None
     score: float | None = None
 
 
@@ -46,6 +48,7 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     session_id: str | None = None
     document_id: str | None = None
+    search_web: bool = False
     top_k: int | None = Field(default=None, ge=1, le=12)
     document_types: list[DocumentType] | None = None
     trust_levels: list[TrustLevel] | None = None

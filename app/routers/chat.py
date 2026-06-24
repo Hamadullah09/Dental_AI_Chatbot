@@ -81,6 +81,7 @@ def chat(
             "min_year": payload.min_year,
             "user_role": current_user.role.value,
             "document_id": document.id if document else None,
+            "search_web": payload.search_web,
         },
     )
     assistant_message = Message(

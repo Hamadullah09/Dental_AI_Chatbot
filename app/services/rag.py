@@ -10,6 +10,7 @@ from app.schemas import SourceCitation
 from app.services.chunk_quality import assess_chunk_quality, is_form_or_survey_question
 from app.services.embeddings import get_embedding_model
 from app.services.vector_store import get_qdrant_client
+from app.services.web_search import WebSearchResult, WebSearchService
 
 
 @dataclass
@@ -28,6 +29,7 @@ class RAGService:
         self.embedding_model = get_embedding_model()
         self.qdrant = get_qdrant_client()
         self.openai_client = OpenAI(api_key=self.settings.openai_api_key) if self.settings.openai_api_key else None
+        self.web_search = WebSearchService()
 
     def retrieve(self, question: str, top_k: int | None = None, filters: dict | None = None) -> list[RetrievedChunk]:
         vector = self.embedding_model.encode([question])[0].tolist()
@@ -198,6 +200,58 @@ class RAGService:
         except OpenAIError:
             return self.generate_extract_answer(question, chunks)
 
+    def generate_hybrid_answer(
+        self,
+        question: str,
+        chunks: list[RetrievedChunk],
+        web_results: list[WebSearchResult],
+    ) -> str:
+        if not web_results:
+            return (
+                "I could not find enough trusted web evidence for that question right now. "
+                "Please try again later or ask using the uploaded PDF sources."
+            )
+        if not self.openai_client:
+            bullets = "\n".join(f"- {result.title}: {result.content[:280]}" for result in web_results[:3])
+            return (
+                "Trusted web sources found the following relevant information:\n\n"
+                f"{bullets}\n\n"
+                "Please verify the linked sources before using this for clinical decisions."
+            )
+
+        pdf_context = "\n\n".join(
+            f"[PDF {idx}] {chunk.citation.document_name}, page {chunk.citation.page_number}\n{chunk.text}"
+            for idx, chunk in enumerate(chunks[:3], start=1)
+        )
+        web_context = "\n\n".join(
+            f"[WEB {idx}] {result.title}\nURL: {result.url}\n{result.content}"
+            for idx, result in enumerate(web_results, start=1)
+        )
+        prompt = (
+            "Answer the dental question using only the provided PDF and trusted web evidence. "
+            "Prefer uploaded PDFs for stable textbook knowledge, and use web evidence for current/latest information. "
+            "Do not diagnose or prescribe. If evidence is insufficient, say so. Include concise citations by source name.\n\n"
+            f"PDF evidence:\n{pdf_context or 'No strong PDF evidence.'}\n\n"
+            f"Trusted web evidence:\n{web_context}\n\n"
+            f"Question: {question}\n\n"
+            "Answer:"
+        )
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=self.settings.openai_model,
+                temperature=0.2,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a safe dental assistant using trusted sources and clear citations.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        except OpenAIError:
+            return self.generate_extract_answer(question, chunks)
+
     def answer(
         self,
         question: str,
@@ -212,8 +266,37 @@ class RAGService:
         if definition_answer:
             return definition_answer, []
 
-        chunks = self.retrieve(question, top_k=top_k, filters=filters)
-        answer = self.generate_answer(question, chunks)
+        filters = filters or {}
+        try:
+            chunks = self.retrieve(question, top_k=top_k, filters=filters)
+        except Exception:
+            chunks = []
+        local_answer = self.generate_answer(question, chunks)
+        wants_web = bool(filters.get("search_web"))
+        local_is_weak = is_insufficient_answer(local_answer)
+
+        if wants_web:
+            try:
+                web_results = self.web_search.search(question) if self.web_search.is_configured else []
+            except Exception as exc:
+                return (
+                    f"Web search could not run right now: {exc} "
+                    "I can still answer from uploaded PDFs when relevant evidence is available."
+                ), []
+            if web_results:
+                answer = self.generate_hybrid_answer(question, chunks, web_results)
+                citations = dedupe_citations([chunk.citation for chunk in chunks[:3]])
+                citations.extend(result.to_citation() for result in web_results)
+                return answer, citations
+            if wants_web and not self.web_search.is_configured:
+                return (
+                    "Web search is not configured yet. Add a Google, Tavily, or Brave Search API key to enable trusted online browsing. "
+                    "I can still answer from uploaded PDFs when relevant evidence is available."
+                ), []
+
+        if local_is_weak:
+            return local_answer, []
+        answer = local_answer
         if is_insufficient_answer(answer):
             return answer, []
         citations = dedupe_citations([chunk.citation for chunk in chunks])
@@ -332,6 +415,16 @@ def answer_basic_dental_definition(question: str) -> str | None:
 def is_insufficient_answer(answer: str) -> bool:
     normalized = answer.lower()
     return "i do not have enough relevant evidence" in normalized or "no relevant context was retrieved" in normalized
+
+
+def is_current_info_question(question: str) -> bool:
+    normalized = question.lower()
+    triggers = [
+        "latest", "current", "recent", "new guideline", "updated guideline",
+        "2025", "2026", "today", "now", "new research", "official guideline",
+        "recent study", "current recommendation",
+    ]
+    return any(trigger in normalized for trigger in triggers)
 
 
 def question_keywords(question: str) -> set[str]:

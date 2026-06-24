@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { Stethoscope, FileText, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Stethoscope, FileText, ThumbsUp, ThumbsDown, Globe2 } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { sendFeedback } from "@/lib/api";
 
@@ -105,15 +105,29 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {message.sources.map((source, index) => (
-                  <span 
-                    key={index}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-dental-darkBg border border-dental-border text-[10px] text-dental-textSecondary hover:text-dental-textPrimary transition-colors"
-                    title={`Source chunk: ${source.chunk_index}, confidence score: ${source.score ? (source.score * 100).toFixed(0) : "N/A"}%`}
-                  >
-                    <FileText size={10} className="text-teal-500 shrink-0" />
-                    <span className="max-w-[120px] truncate">{source.document_name}</span>
-                    {source.page_number && <span className="opacity-60">p.{source.page_number}</span>}
-                  </span>
+                  source.source_type === "web" && source.url ? (
+                    <a
+                      key={index}
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-dental-darkBg border border-dental-border text-[10px] text-dental-textSecondary hover:text-dental-textPrimary transition-colors"
+                      title={source.url}
+                    >
+                      <Globe2 size={10} className="text-sky-400 shrink-0" />
+                      <span className="max-w-[150px] truncate">{source.document_name}</span>
+                    </a>
+                  ) : (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-dental-darkBg border border-dental-border text-[10px] text-dental-textSecondary hover:text-dental-textPrimary transition-colors"
+                      title={`Source chunk: ${source.chunk_index}, confidence score: ${source.score ? (source.score * 100).toFixed(0) : "N/A"}%`}
+                    >
+                      <FileText size={10} className="text-teal-500 shrink-0" />
+                      <span className="max-w-[120px] truncate">{source.document_name}</span>
+                      {source.page_number && <span className="opacity-60">p.{source.page_number}</span>}
+                    </span>
+                  )
                 ))}
               </div>
             </div>

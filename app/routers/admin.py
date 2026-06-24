@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.deps import require_admin
 from app.models import Document, DocumentIngestionLog, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
@@ -41,6 +42,7 @@ def generate_dataset(
     background_tasks: BackgroundTasks,
     _: User = Depends(require_admin),
 ) -> dict:
+    settings = get_settings()
     current = read_dataset_status()
     if current.get("state") == "running":
         raise HTTPException(status_code=409, detail="Dataset generation is already running.")
@@ -64,7 +66,7 @@ def generate_dataset(
         "output_path": "draft_dental_qa.jsonl",
         "skipped_path": "skipped_chunks.jsonl",
         "review_csv_path": "Database Q&A.csv",
-        "provider": "ollama",
+        "provider": settings.dataset_llm_provider,
         "message": "Dataset generation queued. Status will update as chunks are processed.",
     }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
-import { Paperclip, Mic, ArrowUp, X, FileText, ImageIcon, Square } from "lucide-react";
+import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, ImageIcon, Square } from "lucide-react";
 
 interface ChatInputProps {
   value: string;
@@ -14,6 +14,8 @@ interface ChatInputProps {
   onRemoveAttachment: () => void;
   isListening: boolean;
   onToggleVoice: () => void;
+  searchWeb: boolean;
+  onToggleSearchWeb: () => void;
 }
 
 export function ChatInput({
@@ -27,6 +29,8 @@ export function ChatInput({
   onRemoveAttachment,
   isListening,
   onToggleVoice,
+  searchWeb,
+  onToggleSearchWeb,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +96,19 @@ export function ChatInput({
             title="Attach Report, Prescription, or X-ray"
           >
             <Paperclip className="w-5 h-5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleSearchWeb}
+            className={`p-3 rounded-full transition-colors flex-shrink-0 ${
+              searchWeb
+                ? "bg-dental-accent/15 text-dental-accent"
+                : "text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card"
+            }`}
+            title={searchWeb ? "Web search on" : "Search trusted web sources"}
+          >
+            <Globe2 className="w-5 h-5" />
           </button>
 
           {/* Text Area */}
