@@ -1,6 +1,4 @@
-from pathlib import Path
-
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -35,6 +33,10 @@ def on_startup() -> None:
 
 
 @app.get("/")
-async def root() -> Response:
-    index_path = Path(__file__).parent.parent / "static" / "index.html"
-    return Response(content=index_path.read_text(encoding="utf-8"), media_type="text/html")
+async def root() -> dict[str, str]:
+    return {
+        "name": settings.app_name,
+        "status": "ok",
+        "docs": "/docs",
+        "api_prefix": settings.api_prefix,
+    }

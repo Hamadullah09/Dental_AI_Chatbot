@@ -40,14 +40,26 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_model_fallbacks: str = "gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo"
+    llm_provider: str = "openai"
+    ollama_num_ctx: int = 4096
+    ollama_num_predict: int = 512
+    ollama_timeout_seconds: int = 180
     dataset_llm_provider: str = "ollama"
+    dataset_generation_stale_minutes: int = 20
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = "qwen3:14b"
 
     upload_dir: Path = Path("uploaded_docs")
-    max_upload_mb: int = 50
+    max_upload_mb: int = 200
     chunk_size: int = 1000
     chunk_overlap: int = 180
+    embedding_batch_size: int = 64
+    vector_upsert_batch_size: int = 128
+    ocr_dpi: int = 250
+    ocr_language: str = "eng"
+    ocr_config: str = "--psm 6"
+    tesseract_cmd: str | None = None
+    poppler_path: str | None = None
 
     medical_disclaimer: str = (
         "Dental AI is for education and clinical decision support only. "

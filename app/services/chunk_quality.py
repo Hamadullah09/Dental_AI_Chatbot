@@ -80,6 +80,10 @@ def assess_chunk_quality(text: str) -> ChunkQuality:
         reasons.append("table_or_form_layout")
         score -= 0.3
 
+    if looks_like_ocr_garbage(normalized):
+        reasons.append("ocr_or_layout_garbage")
+        score -= 0.45
+
     repeated_line_ratio = repeated_short_line_ratio(text)
     if repeated_line_ratio > 0.35:
         reasons.append("repeated_headers_or_footers")
@@ -120,6 +124,26 @@ def looks_like_table_or_form(text: str) -> bool:
     option_lines = sum(1 for line in lines if re.search(r"\b(yes|no|never|often|sometimes|male|female|tick|cross)\b", line, re.I))
     numeric_lines = sum(1 for line in lines if re.search(r"(^|\s)[A-Z]?\d+([.)]|\s)", line))
     return (short_lines / len(lines) > 0.65 and option_lines >= 2) or numeric_lines >= 4
+
+
+def looks_like_ocr_garbage(text: str) -> bool:
+    lower = text.lower()
+    suspicious_patterns = [
+        r"~\s*[a-z]{1,4}",
+        r"\"{2,}",
+        r"[a-z]\s*[~<>]\s*[a-z]",
+        r"\bfig\.?\s*(er|if|and|,)",
+        r"\bcourtesy\s+dr\.",
+    ]
+    if any(re.search(pattern, lower) for pattern in suspicious_patterns):
+        return True
+
+    words = re.findall(r"[A-Za-z][A-Za-z'-]*", text)
+    if len(words) < 30:
+        return False
+    very_short = sum(1 for word in words if len(word) <= 2)
+    consonant_heavy = sum(1 for word in words if len(word) >= 5 and not re.search(r"[aeiouAEIOU]", word))
+    return very_short / len(words) > 0.35 or consonant_heavy >= 4
 
 
 def repeated_short_line_ratio(text: str) -> float:

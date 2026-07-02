@@ -4,6 +4,8 @@ type ApiOptions = RequestInit & {
   token?: string | null;
 };
 
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+
 export class ApiError extends Error {
   status: number;
 
@@ -27,7 +29,7 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     headers.set("Authorization", `Bearer ${options.token}`);
   }
 
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE_URL}/api${path}`, {
     ...options,
     headers
   });
@@ -172,7 +174,7 @@ export function generateDataset(token: string, input: {
 }
 
 export async function downloadDatasetReviewCsv(token: string) {
-  const response = await fetch("/api/admin/dataset/download", {
+  const response = await fetch(`${API_BASE_URL}/api/admin/dataset/download`, {
     headers: {
       Authorization: `Bearer ${token}`
     }

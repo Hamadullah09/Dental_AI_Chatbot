@@ -57,7 +57,7 @@ class WebSearchService:
             "num": min(self.settings.web_search_max_results, 10),
             "safe": "active",
         }
-        with httpx.Client(timeout=20) as client:
+        with httpx.Client(timeout=20, trust_env=False) as client:
             response = client.get("https://www.googleapis.com/customsearch/v1", params=params)
             try:
                 response.raise_for_status()
@@ -98,7 +98,7 @@ class WebSearchService:
             "include_answer": False,
             "include_raw_content": False,
         }
-        with httpx.Client(timeout=20) as client:
+        with httpx.Client(timeout=20, trust_env=False) as client:
             response = client.post("https://api.tavily.com/search", json=payload)
             response.raise_for_status()
             data = response.json()
@@ -130,7 +130,7 @@ class WebSearchService:
             "text_decorations": False,
         }
         headers = {"X-Subscription-Token": self.settings.brave_search_api_key}
-        with httpx.Client(timeout=20) as client:
+        with httpx.Client(timeout=20, trust_env=False) as client:
             response = client.get("https://api.search.brave.com/res/v1/web/search", params=params, headers=headers)
             response.raise_for_status()
             data = response.json()

@@ -32,6 +32,7 @@ function ChatContent() {
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const loadedSessionRef = useRef<string | null>(null);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -42,11 +43,13 @@ function ChatContent() {
   useEffect(() => {
     if (urlSessionId) {
       const session = sessions.find((s) => s.id === urlSessionId);
-      if (session) {
+      if (session && loadedSessionRef.current !== session.id) {
+        loadedSessionRef.current = session.id;
         setSessionId(session.id);
         setMessages(session.messages);
       }
     } else {
+      loadedSessionRef.current = null;
       setSessionId(null);
       setMessages([]);
     }
@@ -66,62 +69,6 @@ function ChatContent() {
     window.addEventListener("dental_ai_trigger_attachment_send", handleAttachedSend);
     return () => window.removeEventListener("dental_ai_trigger_attachment_send", handleAttachedSend);
   }, [sessions]);
-
-  // Handle simulated attachment submissions
-  async function submitSimulatedAttachment(file: File, textPrompt: string) {
-    setIsLoading(true);
-    setStatus("Analyzing uploaded clinical document...");
-
-    const userMsgContent = textPrompt.trim() 
-      ? `📄 Attached: ${file.name}\n\n${textPrompt}`
-      : `📄 Attached file: ${file.name}`;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: userMsgContent,
-      sources: [],
-      created_at: new Date().toISOString()
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setAttachment(null);
-    setQuestion("");
-
-    // Simulate response delay
-    setTimeout(() => {
-      let aiAnswer = "";
-      const lowerName = file.name.toLowerCase();
-
-      if (lowerName.includes("xray") || lowerName.includes("x-ray") || file.type.startsWith("image/")) {
-        aiAnswer = `I have received and processed your X-ray: **${file.name}**.\n\n` +
-          `**Radiographic Analysis Summary:**\n` +
-          `• **Local Radiolucency:** There is a minor shadowed area (radiolucency) in the sub-enamel layer of tooth #19 (lower left first molar). This may point to moderate dental caries (decay) developing beneath the proximal wall.\n` +
-          `• **Periodontal Margins:** The alveolar bone levels appear stable, with minimal horizontal bone loss. Bone crest height is within the normal limit of 1.5-2mm below the cementoenamel junction.\n` +
-          `• **Root Anatomy:** Root canals appear clear with no signs of periapical abscesses or widening of the periodontal ligament space.\n\n` +
-          `**Clinical recommendation:** This requires an in-person verification. I advise scheduling a physical dental examination for a cold response test to assess pulp vitality.`;
-      } else {
-        aiAnswer = `I have completed reading the clinical document: **${file.name}**.\n\n` +
-          `**Key Dental Observations:**\n` +
-          `• **Periodontal Telemetry:** The pocket depth records indicate minor gingival swelling, with localized pocket depths measuring 4mm in the upper right molars (gingivitis/mild periodontitis).\n` +
-          `• **Diagnostic Impression:** Localized bleeding index is noted at 15%. Enamel mineralization is reported stable.\n` +
-          `• **Treatment Plan Reference:** The document references scheduled routine cleaning and potential conservative composite restoration for tooth #14.\n\n` +
-          `Would you like me to clarify any dental terms or assist with booking a follow-up appointment with Dr. Arthur Smith?`;
-      }
-
-      const aiMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: aiAnswer,
-        sources: [],
-        created_at: new Date().toISOString()
-      };
-
-      setMessages((current) => [...current, aiMessage]);
-      setIsLoading(false);
-      setStatus("Grounded guidance provided.");
-    }, 2000);
-  }
 
   async function waitForDocumentReady(documentId: string) {
     if (!token) throw new Error("Please sign in again.");
@@ -176,6 +123,7 @@ function ChatContent() {
       
       // If we created a new session, update search params to sync the URL
       if (!sessionId && response.session_id) {
+        loadedSessionRef.current = response.session_id;
         router.push(`/chat?session_id=${response.session_id}`);
       }
 
@@ -229,11 +177,6 @@ function ChatContent() {
     }
 
     setQuestion(actionText);
-    // Autofill and submit after state updates
-    setTimeout(() => {
-      const mockForm = document.createElement("form");
-      onSubmit(mockForm as any);
-    }, 50);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -347,7 +290,19 @@ export default function ChatPage() {
   return (
     <AuthGate>
       <AppShell title="Dental Chat" subtitle="Ask questions grounded in uploaded dental PDFs.">
-        <Suspense fallback={<div className="empty-state">Loading chat workspace...</div>}>
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center bg-dental-darkBg px-6 text-dental-textPrimary">
+              <div className="flex w-full max-w-sm flex-col items-center text-center fade-in">
+                <h1 className="text-xl font-semibold tracking-tight">Loading chat</h1>
+                <p className="mt-2 text-sm text-dental-textSecondary">Preparing your DentalGPT workspace</p>
+                <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-dental-border">
+                  <div className="dental-loading-slider h-full w-1/3 rounded-full bg-dental-accent" />
+                </div>
+              </div>
+            </div>
+          }
+        >
           <ChatContent />
         </Suspense>
       </AppShell>

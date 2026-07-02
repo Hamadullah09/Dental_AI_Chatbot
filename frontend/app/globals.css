@@ -14,12 +14,12 @@
 }
 
 html[data-theme="dark"] {
-  --dental-darkBg: #050505;
-  --dental-sidebar: #0f0f0f;
-  --dental-card: #1f1f1f;
-  --dental-border: #2f2f2f;
-  --dental-textPrimary: #ffffff;
-  --dental-textSecondary: #b5b5b5;
+  --dental-darkBg: #101010;
+  --dental-sidebar: #171717;
+  --dental-card: #212121;
+  --dental-border: #303030;
+  --dental-textPrimary: #f4f4f5;
+  --dental-textSecondary: #a1a1aa;
   --dental-accent: #14b8a6;
   --dental-accentHover: #0d9488;
 }
@@ -67,6 +67,16 @@ html[data-theme="dark"] {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.dental-loading-slider {
+  animation: dentalLoadingSlide 1.15s ease-in-out infinite;
+}
+
+@keyframes dentalLoadingSlide {
+  0% { transform: translateX(-115%); }
+  55% { transform: translateX(110%); }
+  100% { transform: translateX(315%); }
 }
 
 /* Mobile Sidebar Transition */

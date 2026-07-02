@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
-import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, ImageIcon, Square } from "lucide-react";
+import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
 
 interface ChatInputProps {
   value: string;
@@ -51,16 +51,12 @@ export function ChatInput({
   };
 
   return (
-    <div className="w-full border-t border-dental-border bg-dental-darkBg p-4">
-      <form onSubmit={onSubmit} className="max-w-3xl mx-auto relative flex flex-col gap-2">
+    <div className="w-full border-t border-dental-border bg-dental-darkBg/95 px-3 py-3 backdrop-blur md:px-4">
+      <form onSubmit={onSubmit} className="relative mx-auto flex w-full max-w-3xl flex-col gap-2">
         {/* Attachment Preview Card */}
         {attachment && (
-          <div className="flex items-center gap-2.5 p-2 bg-dental-card border border-dental-border rounded-xl w-fit max-w-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
-            {attachment.type.startsWith("image/") ? (
-              <ImageIcon className="text-purple-400 shrink-0" size={16} />
-            ) : (
-              <FileText className="text-teal-400 shrink-0" size={16} />
-            )}
+          <div className="flex w-fit max-w-full items-center gap-2.5 rounded-2xl border border-dental-border bg-dental-card p-2 pr-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <FileText className="shrink-0 text-dental-accent" size={16} />
             <div className="flex-1 min-w-0">
               <p className="text-xs text-dental-textPrimary truncate font-medium">{attachment.name}</p>
               <p className="text-[10px] text-dental-textSecondary">
@@ -78,7 +74,7 @@ export function ChatInput({
           </div>
         )}
 
-        <div className="flex items-end gap-2">
+        <div className="rounded-3xl border border-dental-border bg-dental-card shadow-lg shadow-black/10 transition-all focus-within:border-dental-accent/70 focus-within:ring-1 focus-within:ring-dental-accent/30">
           {/* File Input (Hidden) */}
           <input
             type="file"
@@ -88,31 +84,8 @@ export function ChatInput({
             accept="application/pdf"
           />
 
-          {/* Plus/Clip attachment icon */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-3 text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card rounded-full transition-colors flex-shrink-0"
-            title="Attach Report, Prescription, or X-ray"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onToggleSearchWeb}
-            className={`p-3 rounded-full transition-colors flex-shrink-0 ${
-              searchWeb
-                ? "bg-dental-accent/15 text-dental-accent"
-                : "text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-card"
-            }`}
-            title={searchWeb ? "Web search on" : "Search trusted web sources"}
-          >
-            <Globe2 className="w-5 h-5" />
-          </button>
-
           {/* Text Area */}
-          <div className="flex-1 bg-dental-card border border-dental-border rounded-2xl flex items-center px-4 py-2.5 focus-within:border-dental-accent focus-within:ring-1 focus-within:ring-dental-accent/40 transition-all shadow-sm">
+          <div className="flex items-end px-4 pt-3">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -122,50 +95,75 @@ export function ChatInput({
                 adjustHeight();
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about tooth pain, braces, whitening, reports, or appointments"
-              className="w-full bg-transparent border-none focus:ring-0 text-dental-textPrimary placeholder:text-dental-textSecondary resize-none max-h-40 py-1.5 focus:outline-none scrollbar-hide text-sm"
+              placeholder="Ask anything about dental care..."
+              className="max-h-40 min-h-[36px] w-full resize-none bg-transparent py-1.5 text-[15px] leading-6 text-dental-textPrimary placeholder:text-dental-textSecondary focus:outline-none scrollbar-hide"
             />
           </div>
 
-          {/* Voice Input */}
-          <div className="relative hidden sm:flex items-center justify-center flex-shrink-0">
-            {isListening && (
-              <>
-                <span className="absolute h-12 w-12 rounded-full bg-red-400/20 animate-ping" />
-                <span className="absolute h-10 w-10 rounded-full border border-red-300/50" />
-              </>
-            )}
-            <button
-              type="button"
-              onClick={onToggleVoice}
-              aria-pressed={isListening}
-              className={`relative z-10 h-11 min-w-11 px-3 rounded-full transition-all flex items-center justify-center gap-2 border shadow-sm ${
-                isListening
-                  ? "bg-red-500 text-white border-red-400 shadow-red-500/20"
-                  : "bg-dental-card text-dental-textSecondary hover:text-dental-textPrimary hover:border-dental-accent border-dental-border"
-              }`}
-              title={isListening ? "Stop listening" : "Voice to text"}
-            >
-              {isListening ? (
-                <>
-                  <Square className="w-4 h-4 fill-current" />
-                  <span className="text-[11px] font-bold pr-1">Stop</span>
-                </>
-              ) : (
-                <Mic className="w-5 h-5" />
-              )}
-            </button>
-          </div>
+          <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+            <div className="flex items-center gap-1.5">
+              {/* Plus/Clip attachment icon */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-dental-textSecondary transition-colors hover:bg-dental-border hover:text-dental-textPrimary"
+                title="Attach PDF"
+              >
+                <Paperclip className="h-5 w-5" />
+              </button>
 
-          {/* Send Button */}
-          <button
-            type="submit"
-            disabled={isLoading || (!value.trim() && !attachment)}
-            className="p-3 bg-dental-accent hover:bg-dental-accentHover disabled:opacity-45 disabled:pointer-events-none text-white rounded-full transition-colors flex-shrink-0 shadow-lg shadow-dental-accent/15"
-            title="Send message"
-          >
-            <ArrowUp className="w-5 h-5 text-white" />
-          </button>
+              <button
+                type="button"
+                onClick={onToggleSearchWeb}
+                className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
+                  searchWeb
+                    ? "bg-dental-accent/15 text-dental-accent"
+                    : "text-dental-textSecondary hover:bg-dental-border hover:text-dental-textPrimary"
+                }`}
+                title={searchWeb ? "Web search on" : "Search trusted web sources"}
+              >
+                <Globe2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Web</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {/* Voice Input */}
+              <div className="relative flex items-center justify-center">
+                {isListening && <span className="absolute h-10 w-10 rounded-full bg-red-400/20 animate-ping" />}
+                <button
+                  type="button"
+                  onClick={onToggleVoice}
+                  aria-pressed={isListening}
+                  className={`relative z-10 flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                    isListening
+                      ? "bg-red-500 text-white"
+                      : "text-dental-textSecondary hover:bg-dental-border hover:text-dental-textPrimary"
+                  }`}
+                  title={isListening ? "Stop listening" : "Voice to text"}
+                >
+                  {isListening ? (
+                    <>
+                      <Square className="h-3.5 w-3.5 fill-current" />
+                      <span className="hidden text-[11px] font-semibold sm:inline">Stop</span>
+                    </>
+                  ) : (
+                    <Mic className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+
+              {/* Send Button */}
+              <button
+                type="submit"
+                disabled={isLoading || (!value.trim() && !attachment)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-dental-textPrimary text-dental-darkBg transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+                title="Send message"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </form>
       <div className="text-center mt-2">

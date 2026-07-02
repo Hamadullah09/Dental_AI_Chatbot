@@ -383,8 +383,8 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
       setReports(JSON.parse(stored));
     } else {
       const dummy = [
-        { id: "1", name: "Dental_Panoramic_Xray_2025.png", type: "image/png", size: "1280 KB", date: "2026-05-12" },
-        { id: "2", name: "Orthodontics_Treatment_Plan.pdf", type: "application/pdf", size: "340 KB", date: "2026-06-02" }
+        { id: "1", name: "Orthodontics_Treatment_Plan.pdf", type: "application/pdf", size: "340 KB", date: "2026-06-02" },
+        { id: "2", name: "Patient_Education_Notes.pdf", type: "application/pdf", size: "228 KB", date: "2026-06-08" }
       ];
       setReports(dummy);
       localStorage.setItem("dental_ai_reports", JSON.stringify(dummy));
@@ -445,8 +445,8 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
           <FileText size={20} />
         </div>
         <div>
-          <h2 className="text-xl font-bold">Patient Clinical Library</h2>
-          <p className="text-xs text-dental-textSecondary">Upload and organize your dental X-rays, diagnostics, and prescriptions.</p>
+          <h2 className="text-xl font-bold">Patient Files</h2>
+          <p className="text-xs text-dental-textSecondary">Upload and organize dental PDFs, reports, prescriptions, and reference documents.</p>
         </div>
       </div>
 
@@ -471,9 +471,9 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
             </div>
           ) : (
             <div className="space-y-1">
-              <ImageIcon className="mx-auto text-purple-400 w-8 h-8 mb-1" />
+              <FileText className="mx-auto text-purple-400 w-8 h-8 mb-1" />
               <p className="text-xs font-semibold text-white">Drag & drop or click to upload</p>
-              <p className="text-[10px] text-gray-500">Supports PNG, JPG, or PDF (X-rays, dental reports, prescriptions)</p>
+              <p className="text-[10px] text-gray-500">Supports PDF documents for dental reports, prescriptions, and study references</p>
             </div>
           )}
         </div>
@@ -524,90 +524,45 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
   );
 }
 
-/* 4. DENTAL TIPS CAROUSEL CONTENT */
+/* 4. HELP CONTENT */
 function TipsContent() {
-  const [tipIndex, setTipIndex] = useState(0);
-
-  const tips = [
+  const helpItems = [
     {
-      title: "The 2-Minute Rule",
-      desc: "Brushing for at least two minutes, twice a day, ensures you clear plaque from all surfaces. Many people brush for under 45 seconds. Keep a timer or use an electric toothbrush with automated timers.",
-      stat: "Cuts cavity risks by up to 26%"
+      title: "Ask grounded questions",
+      description: "Use clear dental questions. DentalGPT will answer from uploaded PDFs when matching evidence is available.",
     },
     {
-      title: "Don't Forget the Tongue",
-      desc: "Plaque accumulates on your tongue's tiny papillae. This causes chronic bad breath (halitosis) and can transfer decay-inducing bacteria back to your teeth. Scrape or brush your tongue gently daily.",
-      stat: "Reduces bad breath compounds by 75%"
+      title: "Use web search intentionally",
+      description: "Enable web search only when you need current information from trusted online sources.",
     },
     {
-      title: "Flossing Reaches 40% of Teeth",
-      desc: "Toothbrush bristles cannot reach the tight contact areas between your teeth. If you do not floss, you leave nearly 40% of your tooth surfaces uncleaned, promoting plaque growth and proximal cavities.",
-      stat: "Cleans spaces where most cavities form"
+      title: "Upload clinical documents",
+      description: "Attach PDF references or reports when you want answers scoped to a specific document.",
     },
     {
-      title: "Enamel Erosion & Acidic Foods",
-      desc: "Sugary treats and acidic juices soften your tooth enamel. Brushing immediately after eating these can actually scratch the weakened enamel. Rinse with water first, and wait 30 minutes before brushing.",
-      stat: "Protects protective tooth structures"
-    }
+      title: "Medical safety",
+      description: "DentalGPT is for education and decision support. For diagnosis, treatment, or emergencies, consult a licensed dentist.",
+    },
   ];
 
-  const handleNext = () => {
-    setTipIndex((prev) => (prev + 1) % tips.length);
-  };
-
-  const handlePrev = () => {
-    setTipIndex((prev) => (prev - 1 + tips.length) % tips.length);
-  };
-
   return (
-    <div className="p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="bg-amber-500/10 p-2 rounded-lg text-amber-400">
-          <Sparkles size={20} />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold">Dental Care Tips</h2>
-          <p className="text-xs text-dental-textSecondary">Oral hygiene insights for a healthy, vibrant smile.</p>
-        </div>
+    <div className="p-6 text-white">
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold">Help</h2>
+        <p className="mt-1 text-sm text-white/55">Quick guidance for using DentalGPT safely and effectively.</p>
       </div>
 
-      <div className="relative min-h-[180px] bg-dental-darkBg/60 border border-dental-border p-5 rounded-2xl flex flex-col justify-between items-center text-center">
-        {/* Carousel slide details */}
-        <div className="space-y-3 max-w-md my-auto">
-          <span className="inline-block px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold">
-            Insight {tipIndex + 1} of {tips.length}
-          </span>
-          <h3 className="text-base font-bold text-white leading-snug">{tips[tipIndex].title}</h3>
-          <p className="text-xs text-dental-textSecondary leading-relaxed">{tips[tipIndex].desc}</p>
-          <p className="text-[10px] text-dental-accent font-semibold">{tips[tipIndex].stat}</p>
-        </div>
-
-        {/* Carousel controls */}
-        <div className="flex justify-between w-full absolute top-1/2 -translate-y-1/2 left-0 right-0 px-2 pointer-events-none">
-          <button 
-            onClick={handlePrev}
-            className="p-1 rounded-full bg-dental-card border border-dental-border hover:bg-dental-border transition-colors text-white pointer-events-auto shrink-0"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button 
-            onClick={handleNext}
-            className="p-1 rounded-full bg-dental-card border border-dental-border hover:bg-dental-border transition-colors text-white pointer-events-auto shrink-0"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-      
-      {/* Slider dots indicators */}
-      <div className="flex justify-center gap-1.5 mt-4">
-        {tips.map((_, i) => (
-          <button 
-            key={i} 
-            onClick={() => setTipIndex(i)}
-            className={`w-2 h-2 rounded-full transition-all ${i === tipIndex ? "bg-dental-accent w-4" : "bg-dental-border"}`}
-          />
+      <div className="space-y-2">
+        {helpItems.map((item) => (
+          <div key={item.title} className="rounded-2xl border border-white/10 bg-[#202020] p-4">
+            <p className="font-medium">{item.title}</p>
+            <p className="mt-1 text-sm leading-6 text-white/60">{item.description}</p>
+          </div>
         ))}
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+        If symptoms are severe, worsening, or urgent, contact a dentist or emergency service instead of relying on the chatbot.
       </div>
     </div>
   );
@@ -621,130 +576,72 @@ interface SettingsProps {
 
 function SettingsContent({ theme, toggleTheme }: SettingsProps) {
   const { user } = useAuth();
-  const [modelType, setModelType] = useState("gpt-4o-mini");
-  const [temperature, setTemperature] = useState(0.3);
-  const [topK, setTopK] = useState(5);
-  const [savedSettings, setSavedSettings] = useState(false);
-
-  const handleSave = () => {
-    setSavedSettings(true);
-    setTimeout(() => setSavedSettings(false), 2000);
-  };
-
-  const handleResetChatMemory = () => {
-    localStorage.removeItem("dental_ai_appointments");
-    localStorage.removeItem("dental_ai_reports");
-    alert("Chat cache and mock data reset successfully!");
-  };
+  const initials = user?.full_name
+    ? user.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()
+    : user?.email?.slice(0, 2).toUpperCase() || "DA";
 
   return (
-    <div className="p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="bg-gray-500/10 p-2 rounded-lg text-gray-400">
-          <Settings size={20} />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold">Preferences & Settings</h2>
-          <p className="text-xs text-dental-textSecondary">Configure workspace behavior and mock RAG properties.</p>
-        </div>
-      </div>
+    <div className="grid h-[520px] grid-cols-1 bg-[#1f1f1f] text-white md:grid-cols-[220px_1fr]">
+      <aside className="border-b border-white/10 p-3 md:border-b-0 md:border-r">
+        <button className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3 py-3 text-left text-sm font-semibold">
+          <Settings size={18} />
+          General
+        </button>
+        <button className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/75 hover:bg-white/10">
+          <ShieldAlert size={18} />
+          Safety
+        </button>
+        <button className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/75 hover:bg-white/10">
+          <BadgeInfo size={18} />
+          About
+        </button>
+      </aside>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[320px]">
-        {/* Left Side: General Profile */}
-        <div className="space-y-4 border-r border-dental-border/50 pr-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-dental-accent">Account details</h3>
-          
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-dental-accent to-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
-                {user?.full_name ? user.full_name.substring(0, 2).toUpperCase() : "JD"}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-400">Logged in as</p>
-                <p className="text-sm font-bold truncate text-white">{user?.full_name || "Wazeer Ali"}</p>
-                <p className="text-[10px] text-dental-textSecondary truncate">{user?.email || "patient@example.com"}</p>
-              </div>
+      <section className="overflow-y-auto p-6">
+        <h2 className="text-2xl font-semibold">General</h2>
+        <div className="mt-6 divide-y divide-white/10">
+          <div className="flex items-center justify-between gap-4 py-5">
+            <div>
+              <p className="font-medium">Account</p>
+              <p className="mt-1 text-sm text-white/55">{user?.email || "Signed in user"}</p>
             </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 block">Workspace Theme</label>
-              <button 
-                onClick={toggleTheme}
-                className="w-full flex justify-between items-center px-3 py-2 bg-dental-darkBg border border-dental-border rounded-lg text-xs font-semibold text-white"
-              >
-                <span className="flex items-center gap-2">
-                  {theme === "dark" ? <Moon size={14} className="text-yellow-400" /> : <Sun size={14} />}
-                  Theme Mode: {theme === "dark" ? "Dark default" : "Light theme"}
-                </span>
-                <span className="text-[10px] text-dental-accent uppercase font-bold">Toggle</span>
-              </button>
-            </div>
-
-            <div className="pt-2">
-              <button 
-                onClick={handleResetChatMemory}
-                className="w-full py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-[10px] font-bold transition-all"
-              >
-                Clear Simulated Local Cache
-              </button>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-sm font-bold">
+              {initials}
             </div>
           </div>
-        </div>
 
-        {/* Right Side: RAG / LLM tuning */}
-        <div className="space-y-4 overflow-y-auto">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-sky-400">RAG configurations</h3>
-          
-          <div className="space-y-3 text-xs">
-            <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 block">RAG Retrieval Top-K Chunks ({topK})</label>
-              <input 
-                type="range"
-                min="1"
-                max="12"
-                value={topK}
-                onChange={(e) => setTopK(parseInt(e.target.value))}
-                className="w-full h-1 bg-dental-border rounded-lg appearance-none cursor-pointer accent-dental-accent"
-              />
-              <span className="text-[10px] text-gray-500 block">Number of sources to retrieve from vector database.</span>
+          <div className="flex items-center justify-between gap-4 py-5">
+            <div>
+              <p className="font-medium">Appearance</p>
+              <p className="mt-1 text-sm text-white/55">Switch between dark and light workspace mode.</p>
             </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 block">LLM Processing Model</label>
-              <select 
-                value={modelType}
-                onChange={(e) => setModelType(e.target.value)}
-                className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none focus:border-dental-accent"
-              >
-                <option value="gpt-4o-mini">gpt-4o-mini (Faster - Recommended)</option>
-                <option value="gpt-4o">gpt-4o (Higher factuality)</option>
-                <option value="extractive">Local Extractive Fallback (No internet)</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 block">LLM Temperature ({temperature})</label>
-              <input 
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                className="w-full h-1 bg-dental-border rounded-lg appearance-none cursor-pointer accent-dental-accent"
-              />
-              <span className="text-[10px] text-gray-500 block">Lower value makes responses more strict and analytical.</span>
-            </div>
-
-            <button 
-              onClick={handleSave}
-              className="w-full py-2 bg-dental-accent hover:bg-dental-accentHover text-white rounded-lg font-bold transition-all"
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm hover:bg-white/10"
             >
-              {savedSettings ? "Saved Configuration!" : "Save RAG Parameters"}
+              {theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+              {theme === "dark" ? "Dark" : "Light"}
             </button>
           </div>
+
+          <div className="flex items-center justify-between gap-4 py-5">
+            <div>
+              <p className="font-medium">Grounded answers</p>
+              <p className="mt-1 text-sm text-white/55">DentalGPT answers from uploaded clinical references when evidence is available.</p>
+            </div>
+            <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">Enabled</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 py-5">
+            <div>
+              <p className="font-medium">Medical safety notice</p>
+              <p className="mt-1 text-sm text-white/55">DentalGPT is educational and does not replace a licensed dentist.</p>
+            </div>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">Always shown</span>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -769,10 +666,10 @@ function UpgradeContent() {
       price: "$19",
       period: "/month",
       popular: true,
-      description: "Advanced diagnostic support, image-based X-ray assistance, and clinic exports.",
+      description: "Advanced dental document support, clinical exports, and guided patient education.",
       features: [
         "Unlimited messages daily",
-        "X-ray upload diagnostic analysis",
+        "PDF upload and document-grounded chat",
         "Dr. Smith consultation booking sync",
         "HIPAA-compliant document exports"
       ]
@@ -799,7 +696,7 @@ function UpgradeContent() {
         </div>
         <div>
           <h2 className="text-xl font-bold">Upgrade Membership Plan</h2>
-          <p className="text-xs text-dental-textSecondary">Unlock diagnostic capabilities and advanced X-ray processing filters.</p>
+          <p className="text-xs text-dental-textSecondary">Unlock advanced document workflows and clinical review features.</p>
         </div>
       </div>
 

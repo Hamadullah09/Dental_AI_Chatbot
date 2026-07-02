@@ -5,7 +5,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Dental AI Chatbot",
-  description: "Professional dental RAG chatbot MVP"
+  description: "Professional dental RAG chatbot MVP",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/chatbot-logo.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

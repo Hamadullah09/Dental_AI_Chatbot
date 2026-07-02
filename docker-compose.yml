@@ -5,9 +5,12 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql+psycopg://dental:dental_password@postgres:5432/dental_ai
       QDRANT_URL: http://qdrant:6333
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       UPLOAD_DIR: /app/uploaded_docs
     volumes:
       - ./uploaded_docs:/app/uploaded_docs

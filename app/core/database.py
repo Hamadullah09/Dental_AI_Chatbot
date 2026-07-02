@@ -1,16 +1,29 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 
 settings = get_settings()
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=connect_args)
+is_sqlite = settings.database_url.startswith("sqlite")
+connect_args = {"check_same_thread": False, "timeout": 60} if is_sqlite else {}
+engine_kwargs = {"poolclass": NullPool} if is_sqlite else {"pool_pre_ping": True}
+engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+if is_sqlite:
+    @event.listens_for(engine, "connect")
+    def configure_sqlite(connection, _connection_record) -> None:
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=60000")
+        cursor.close()
 
 
 class Base(DeclarativeBase):

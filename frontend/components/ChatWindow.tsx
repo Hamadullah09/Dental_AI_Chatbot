@@ -1,10 +1,8 @@
 "use client";
 
 import React from "react";
-import { Stethoscope } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { MessageBubble } from "./MessageBubble";
-import { QuickActions } from "./QuickActions";
 
 interface ChatWindowProps {
   messages: Message[];
@@ -20,9 +18,6 @@ interface ChatWindowProps {
 export function ChatWindow({
   messages,
   isLoading,
-  onQuickAction,
-  onOpenModal,
-  onTriggerFileUpload,
   onStatus,
   chatWindowRef,
   bottomRef,
@@ -32,31 +27,23 @@ export function ChatWindow({
   return (
     <div 
       ref={chatWindowRef}
-      className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth"
+      className="flex-1 overflow-y-auto scroll-smooth"
     >
-      <div className="max-w-3xl mx-auto h-full flex flex-col justify-between">
+      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 py-6 sm:px-6 md:px-8">
         
         {isChatEmpty ? (
           /* Welcome Screen (Empty State) */
-          <div className="flex-1 flex flex-col justify-center items-center text-center space-y-6 my-auto py-10 fade-in">
-            
-            <div className="space-y-2">
-              <h1 className="text-3xl font-bold text-dental-textPrimary">How can I help with your dental care today?</h1>
-              <p className="text-dental-textSecondary max-w-md mx-auto text-sm leading-relaxed">
-                AI-powered assistance for symptoms, appointments, and understanding your X-rays.
+          <div className="flex flex-1 items-center justify-center py-8 fade-in">
+            <div className="mx-auto w-full max-w-2xl text-center">
+              <h1 className="text-3xl font-semibold tracking-tight text-dental-textPrimary sm:text-4xl">How can I help?</h1>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-dental-textSecondary sm:text-base">
+                Ask questions about dental care, symptoms, treatments, and general oral health guidance.
               </p>
             </div>
-
-            {/* Quick Actions component */}
-            <QuickActions 
-              onQuickAction={onQuickAction}
-              onOpenModal={onOpenModal}
-              onTriggerFileUpload={onTriggerFileUpload}
-            />
           </div>
         ) : (
           /* Active Chat Conversation View */
-          <div className="flex flex-col space-y-6 pb-20 w-full">
+          <div className="flex w-full flex-col gap-1 pb-28">
             {messages.map((message) => (
               <MessageBubble 
                 key={message.id} 
@@ -67,14 +54,11 @@ export function ChatWindow({
 
             {/* Typing Indicator */}
             {isLoading && (
-              <div id="typingIndicator" className="flex gap-4 fade-in">
-                <div className="w-8 h-8 rounded-full bg-dental-card border border-dental-border flex items-center justify-center text-dental-accent shrink-0">
-                  <Stethoscope className="w-4 h-4" />
-                </div>
-                <div className="bg-dental-card border border-dental-border rounded-2xl rounded-tl-sm px-4 py-3.5 flex items-center gap-1 h-10">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+              <div id="typingIndicator" className="flex w-full justify-start px-1 py-5 fade-in">
+                <div className="flex h-10 items-center gap-1 rounded-2xl bg-[#202020] px-4">
+                  <div className="typing-dot h-2 w-2 rounded-full bg-dental-textSecondary"></div>
+                  <div className="typing-dot h-2 w-2 rounded-full bg-dental-textSecondary"></div>
+                  <div className="typing-dot h-2 w-2 rounded-full bg-dental-textSecondary"></div>
                 </div>
               </div>
             )}

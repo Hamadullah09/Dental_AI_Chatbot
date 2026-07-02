@@ -1,7 +1,7 @@
 import csv
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -70,7 +70,35 @@ def read_dataset_status() -> dict[str, Any]:
             "document_id": None,
             "document_name": None,
         }
-    return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    status = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    if status.get("state") == "running" and _status_is_stale(status):
+        status = {
+            **status,
+            "state": "failed",
+            "message": (
+                "Previous dataset generation appears to be stale or interrupted. "
+                "You can safely click Generate again; completed chunks will be skipped."
+            ),
+            "output_path": str(OUTPUT_PATH),
+            "skipped_path": str(SKIPPED_PATH),
+            "review_csv_path": str(REVIEW_CSV_PATH),
+        }
+        _write_status(status)
+    return status
+
+
+def _status_is_stale(status: dict[str, Any]) -> bool:
+    updated_at = status.get("updated_at")
+    if not updated_at:
+        return False
+    try:
+        updated = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    stale_after = timedelta(minutes=max(1, get_settings().dataset_generation_stale_minutes))
+    return datetime.now(timezone.utc) - updated > stale_after
 
 
 def _read_jsonl(path: Path):

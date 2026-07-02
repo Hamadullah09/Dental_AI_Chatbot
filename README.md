@@ -36,7 +36,7 @@ flowchart LR
   ING --> PDF["Uploaded dental PDFs"]
   ING --> QD["Qdrant vector store"]
   RAG --> QD
-  RAG --> LLM["OpenAI or extractive fallback"]
+  RAG --> LLM["OpenAI, Ollama/Qwen, or extractive fallback"]
   RAG --> WEB["Optional trusted web search"]
 ```
 
@@ -55,9 +55,20 @@ Required for production-like use:
 ```bash
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 OPENAI_API_KEY=your-openai-api-key
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3:14b
+OLLAMA_NUM_CTX=4096
+OLLAMA_TIMEOUT_SECONDS=180
 DATASET_LLM_PROVIDER=openai
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
+```
+
+If the backend runs inside Docker and Ollama runs on the host machine, use:
+
+```bash
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
 
 For Docker Compose, use the container services:
@@ -134,7 +145,22 @@ For local non-Docker development, set:
 DATABASE_URL=sqlite:///./dental_ai.db
 QDRANT_URL=
 QDRANT_LOCAL_PATH=qdrant_storage
+MAX_UPLOAD_MB=200
+EMBEDDING_BATCH_SIZE=64
+VECTOR_UPSERT_BATCH_SIZE=128
 ```
+
+For scanned/image-only PDFs, install OCR system tools and configure paths when Windows cannot find them automatically:
+
+```bash
+OCR_DPI=250
+OCR_LANGUAGE=eng
+OCR_CONFIG=--psm 6
+TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+POPPLER_PATH=C:\poppler\Library\bin
+```
+
+`TESSERACT_CMD` should point to `tesseract.exe`; `POPPLER_PATH` should point to the folder containing Poppler tools such as `pdftoppm.exe`.
 
 Run the frontend in another terminal on Windows:
 

@@ -1,4 +1,5 @@
 import hashlib
+import time
 import uuid
 from pathlib import Path
 
@@ -8,6 +9,17 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Document, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
+
+
+def remove_file_with_retries(path: Path, attempts: int = 5) -> None:
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2)
 
 
 def save_upload(
@@ -40,45 +52,54 @@ def save_upload(
     total_bytes = 0
     max_bytes = settings.max_upload_mb * 1024 * 1024
     first_bytes = b""
-    with storage_path.open("wb") as output:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            if not first_bytes:
-                first_bytes = chunk[:8]
-            total_bytes += len(chunk)
-            if total_bytes > max_bytes:
-                storage_path.unlink(missing_ok=True)
-                raise ValueError(f"PDF is too large. Maximum allowed size is {settings.max_upload_mb} MB.")
-            sha256.update(chunk)
-            output.write(chunk)
+    too_large = False
+    try:
+        with storage_path.open("wb") as output:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                if not first_bytes:
+                    first_bytes = chunk[:8]
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    too_large = True
+                    break
+                sha256.update(chunk)
+                output.write(chunk)
+    finally:
+        upload.file.close()
+
+    if too_large:
+        remove_file_with_retries(storage_path)
+        raise ValueError(f"PDF is too large. Maximum allowed size is {settings.max_upload_mb} MB.")
 
     if total_bytes == 0:
-        storage_path.unlink(missing_ok=True)
+        remove_file_with_retries(storage_path)
         raise ValueError("Uploaded PDF is empty.")
     if not first_bytes.startswith(b"%PDF-"):
-        storage_path.unlink(missing_ok=True)
+        remove_file_with_retries(storage_path)
         raise ValueError("Uploaded file is not a valid PDF.")
 
+    validation_error: str | None = None
     try:
-        reader = PdfReader(str(storage_path))
-        if reader.is_encrypted:
-            storage_path.unlink(missing_ok=True)
-            raise ValueError("Encrypted PDFs are not supported. Please upload an unlocked PDF.")
-        if len(reader.pages) == 0:
-            storage_path.unlink(missing_ok=True)
-            raise ValueError("PDF has no readable pages.")
-    except ValueError:
-        raise
+        with storage_path.open("rb") as pdf_stream:
+            reader = PdfReader(pdf_stream)
+            if reader.is_encrypted:
+                validation_error = "Encrypted PDFs are not supported. Please upload an unlocked PDF."
+            elif len(reader.pages) == 0:
+                validation_error = "PDF has no readable pages."
     except Exception as exc:
-        storage_path.unlink(missing_ok=True)
+        remove_file_with_retries(storage_path)
         raise ValueError(f"PDF validation failed: {exc}")
+    if validation_error:
+        remove_file_with_retries(storage_path)
+        raise ValueError(validation_error)
 
     file_hash = sha256.hexdigest()
     duplicate = db.query(Document).filter(Document.file_hash == file_hash).first()
     if duplicate:
-        storage_path.unlink(missing_ok=True)
+        remove_file_with_retries(storage_path)
         raise ValueError(f"This PDF was already uploaded as {duplicate.title or duplicate.original_filename}.")
 
     clean_title = (book_title or "").strip() or Path(original_filename).stem

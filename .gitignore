@@ -14,6 +14,11 @@ draft_dental_qa.jsonl
 skipped_chunks.jsonl
 draft_dental_qa_review.csv
 dental_qa.jsonl
+backups/
+tools/
+.cloudflared/
+*.db-shm
+*.db-wal
 
 .venv/
 .venv_run/

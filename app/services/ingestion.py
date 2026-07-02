@@ -5,10 +5,13 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Callable
+import time
 
+import numpy as np
 from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -46,12 +49,24 @@ class IngestionService:
     def ensure_collection(self) -> None:
         collections = self.qdrant.get_collections().collections
         existing = next((collection for collection in collections if collection.name == self.settings.qdrant_collection), None)
+        if existing and self.collection_vector_size_matches():
+            return
         if existing:
+            self.recreate_collection()
             return
         self.qdrant.create_collection(
             collection_name=self.settings.qdrant_collection,
             vectors_config=qmodels.VectorParams(size=self.vector_size, distance=qmodels.Distance.COSINE),
         )
+
+    def collection_vector_size_matches(self) -> bool:
+        try:
+            info = self.qdrant.get_collection(self.settings.qdrant_collection)
+            vectors = info.config.params.vectors
+            size = getattr(vectors, "size", None)
+            return int(size or 0) == self.vector_size
+        except Exception:
+            return False
 
     def recreate_collection(self) -> None:
         self.qdrant.recreate_collection(
@@ -61,7 +76,7 @@ class IngestionService:
 
     def add_log(self, db: Session, document: Document, message: str, level: str = "info") -> None:
         db.add(DocumentIngestionLog(document_id=document.id, level=level, message=message))
-        db.commit()
+        commit_with_retry(db)
 
     def set_progress(
         self,
@@ -77,19 +92,25 @@ class IngestionService:
         document.ingestion_step = step
         if log_message:
             db.add(DocumentIngestionLog(document_id=document.id, level=level, message=log_message))
-        db.commit()
+        commit_with_retry(db)
 
     def parse_pdf(self, pdf_path: Path, log: Callable[[str, str], None] | None = None) -> ParsedDocument:
-        reader = PdfReader(str(pdf_path))
+        extracted_pages: list[tuple[int, str]] = []
+        with pdf_path.open("rb") as pdf_stream:
+            reader = PdfReader(pdf_stream)
+            pages_total = len(reader.pages)
+            for page_index, page in enumerate(reader.pages, start=1):
+                try:
+                    raw_text = page.extract_text() or ""
+                except Exception:
+                    raw_text = ""
+                extracted_pages.append((page_index, raw_text))
+
         chunks: list[ParsedChunk] = []
         chunk_index = 0
         ocr_used = False
         ocr_attempted_pages = 0
-        for page_index, page in enumerate(reader.pages, start=1):
-            try:
-                raw_text = page.extract_text() or ""
-            except Exception:
-                raw_text = ""
+        for page_index, raw_text in extracted_pages:
             page_text = clean_pdf_text(raw_text)
             if not page_text:
                 ocr_attempted_pages += 1
@@ -108,26 +129,76 @@ class IngestionService:
                 chunk_index += 1
         return ParsedDocument(
             chunks=chunks,
-            pages_total=len(reader.pages),
+            pages_total=pages_total,
             ocr_used=ocr_used,
             ocr_attempted_pages=ocr_attempted_pages,
         )
 
-    def delete_document_vectors(self, document_id: str) -> None:
+    def delete_document_vectors(self, document_id: str, log: Callable[[str, str], None] | None = None) -> None:
         self.ensure_collection()
-        self.qdrant.delete(
-            collection_name=self.settings.qdrant_collection,
-            points_selector=qmodels.FilterSelector(
-                filter=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(
-                            key="document_id",
-                            match=qmodels.MatchValue(value=document_id),
-                        )
-                    ]
+        try:
+            self.qdrant.delete(
+                collection_name=self.settings.qdrant_collection,
+                points_selector=qmodels.FilterSelector(
+                    filter=qmodels.Filter(
+                        must=[
+                            qmodels.FieldCondition(
+                                key="document_id",
+                                match=qmodels.MatchValue(value=document_id),
+                            )
+                        ]
+                    )
+                ),
+            )
+        except Exception as exc:
+            if is_local_qdrant_storage_error(exc):
+                if log:
+                    log(
+                        "Vector store cleanup failed because local Qdrant storage appears inconsistent. "
+                        "Recreating the local vector collection and continuing ingestion.",
+                        "warning",
+                    )
+                self.recreate_collection()
+                return
+            raise
+
+    def encode_chunks(self, chunks: list[ParsedChunk]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        batch_size = max(1, int(self.settings.embedding_batch_size))
+        expected_size = self.vector_size
+        for start in range(0, len(chunks), batch_size):
+            batch = chunks[start:start + batch_size]
+            encoded = self.embedding_model.encode([chunk.text for chunk in batch])
+            encoded_array = np.asarray(encoded, dtype=np.float32)
+            if encoded_array.ndim != 2:
+                raise ValueError(f"Embedding model returned invalid shape {encoded_array.shape}.")
+            if encoded_array.shape[1] != expected_size:
+                raise ValueError(
+                    f"Embedding dimension mismatch: model returned {encoded_array.shape[1]}, "
+                    f"but vector collection expects {expected_size}."
                 )
-            ),
-        )
+            vectors.extend(vector.tolist() for vector in encoded_array)
+        if len(vectors) != len(chunks):
+            raise ValueError(f"Embedding count mismatch: created {len(vectors)} vectors for {len(chunks)} chunks.")
+        return vectors
+
+    def upsert_points_in_batches(self, points: list[qmodels.PointStruct], log: Callable[[str, str], None] | None = None) -> None:
+        batch_size = max(1, int(self.settings.vector_upsert_batch_size))
+        for start in range(0, len(points), batch_size):
+            batch = points[start:start + batch_size]
+            for attempt in range(3):
+                try:
+                    self.qdrant.upsert(collection_name=self.settings.qdrant_collection, points=batch)
+                    break
+                except Exception as exc:
+                    if not is_local_qdrant_storage_error(exc) or attempt == 2:
+                        raise
+                    if log:
+                        log(
+                            f"Vector batch {start + 1}-{start + len(batch)} hit local storage transaction contention; retrying.",
+                            "warning",
+                        )
+                    time.sleep(0.5 * (attempt + 1))
 
     def ingest_document(self, db: Session, document: Document) -> int:
         document.status = DocumentStatus.processing
@@ -137,19 +208,23 @@ class IngestionService:
         document.ocr_used = False
         document.ingestion_started_at = datetime.utcnow()
         document.ingestion_completed_at = None
-        db.commit()
+        commit_with_retry(db)
 
         try:
             self.set_progress(db, document, 5, "Starting", log_message="Ingestion job started.")
             self.ensure_collection()
             self.set_progress(db, document, 15, "Reading PDF", log_message="Vector collection is ready.")
 
+            parse_log_buffer: list[tuple[str, str]] = []
+
             def log_parse_event(message: str, level: str = "info") -> None:
-                self.add_log(db, document, message, level)
+                parse_log_buffer.append((message, level))
 
             parsed = self.parse_pdf(Path(document.storage_path), log=log_parse_event)
             chunks = parsed.chunks
             document.ocr_used = parsed.ocr_used
+            for message, level in parse_log_buffer[-80:]:
+                db.add(DocumentIngestionLog(document_id=document.id, level=level, message=message))
             self.set_progress(
                 db,
                 document,
@@ -167,12 +242,25 @@ class IngestionService:
                 )
 
             self.set_progress(db, document, 60, "Creating embeddings", log_message=f"Creating embeddings for {len(chunks)} chunks.")
-            vectors = self.embedding_model.encode([chunk.text for chunk in chunks])
+            vectors = self.encode_chunks(chunks)
             points: list[qmodels.PointStruct] = []
+            db_chunks: list[DocumentChunk] = []
 
             self.set_progress(db, document, 72, "Replacing old chunks", log_message="Removing previous chunks and vector points for this document.")
+            existing_chunk_count = db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).count()
             db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
-            self.delete_document_vectors(document.id)
+            commit_with_retry(db)
+            if existing_chunk_count:
+                self.delete_document_vectors(document.id, log=log_parse_event)
+            else:
+                db.add(
+                    DocumentIngestionLog(
+                        document_id=document.id,
+                        level="info",
+                        message="No previous chunks found for this document; skipping old vector cleanup.",
+                    )
+                )
+                commit_with_retry(db)
 
             for chunk, vector in zip(chunks, vectors):
                 point_id = str(uuid.uuid4())
@@ -200,8 +288,8 @@ class IngestionService:
                     "is_noisy": quality.is_noisy,
                     "noise_reasons": quality.noise_reasons,
                 }
-                points.append(qmodels.PointStruct(id=point_id, vector=vector.tolist(), payload=payload))
-                db.add(
+                points.append(qmodels.PointStruct(id=point_id, vector=vector, payload=payload))
+                db_chunks.append(
                     DocumentChunk(
                         document_id=document.id,
                         qdrant_point_id=point_id,
@@ -216,22 +304,25 @@ class IngestionService:
                 )
 
             self.set_progress(db, document, 88, "Writing vector index", log_message=f"Writing {len(points)} chunks to the vector store.")
-            self.qdrant.upsert(collection_name=self.settings.qdrant_collection, points=points)
+            self.upsert_points_in_batches(points, log=log_parse_event)
+            db.bulk_save_objects(db_chunks)
+            commit_with_retry(db)
             document.status = DocumentStatus.ready
             document.chunk_count = len(points)
             document.ingestion_progress = 100
             document.ingestion_step = "Ready"
             document.ingestion_completed_at = datetime.utcnow()
             db.add(DocumentIngestionLog(document_id=document.id, level="info", message=f"Ingestion completed with {len(points)} chunks."))
-            db.commit()
+            commit_with_retry(db)
             return len(points)
         except Exception as exc:
+            db.rollback()
             document.status = DocumentStatus.failed
             document.error_message = str(exc)
             document.ingestion_step = "Failed"
             document.ingestion_completed_at = datetime.utcnow()
             db.add(DocumentIngestionLog(document_id=document.id, level="error", message=f"Ingestion failed: {exc}"))
-            db.commit()
+            commit_with_retry(db)
             raise
 
 
@@ -280,23 +371,39 @@ def extract_page_text_with_ocr(
     try:
         from pdf2image import convert_from_path
         import pytesseract
+        from PIL import ImageFilter, ImageOps
     except ImportError:
         if log:
-            log("OCR packages are not installed. Install pdf2image and pytesseract to process scanned PDFs.", "warning")
+            log("OCR packages are not installed. Install pdf2image, pytesseract, and Pillow to process scanned PDFs.", "warning")
         return ""
 
+    settings = get_settings()
+    if settings.tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
+
+    convert_options = {
+        "first_page": page_number,
+        "last_page": page_number,
+        "dpi": settings.ocr_dpi,
+        "fmt": "png",
+        "thread_count": 1,
+    }
+    if settings.poppler_path:
+        convert_options["poppler_path"] = settings.poppler_path
+
+    images = []
     try:
-        images = convert_from_path(
-            str(pdf_path),
-            first_page=page_number,
-            last_page=page_number,
-            dpi=200,
-            fmt="png",
-            thread_count=1,
-        )
+        images = convert_from_path(str(pdf_path), **convert_options)
         if not images:
             return ""
-        text = pytesseract.image_to_string(images[0]) or ""
+        image = ImageOps.grayscale(images[0])
+        image = ImageOps.autocontrast(image)
+        image = image.filter(ImageFilter.SHARPEN)
+        text = pytesseract.image_to_string(
+            image,
+            lang=settings.ocr_language,
+            config=settings.ocr_config,
+        ) or ""
         if text.strip() and log:
             log(f"Page {page_number}: OCR extracted text successfully.", "info")
         return text
@@ -304,6 +411,41 @@ def extract_page_text_with_ocr(
         if log:
             log(f"Page {page_number}: OCR failed ({exc}).", "warning")
         return ""
+    finally:
+        for image in images:
+            try:
+                image.close()
+            except Exception:
+                pass
+
+
+def is_local_qdrant_storage_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    if "out of bounds" in message and "axis" in message:
+        return True
+    return any(
+        pattern in message
+        for pattern in [
+            "cannot start a transaction within a transaction",
+            "cannot start transaction within transaction",
+            "operands could not be broadcast together",
+            "storage folder",
+            "already accessed by another instance",
+        ]
+    )
+
+
+def commit_with_retry(db: Session, attempts: int = 8, delay_seconds: float = 0.25) -> None:
+    for attempt in range(attempts):
+        try:
+            db.commit()
+            return
+        except OperationalError as exc:
+            if "database is locked" not in str(exc).lower() or attempt == attempts - 1:
+                db.rollback()
+                raise
+            db.rollback()
+            time.sleep(delay_seconds * (attempt + 1))
 
 
 def split_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

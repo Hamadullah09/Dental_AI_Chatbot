@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 import re
 
-from openai import OpenAI, OpenAIError
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
@@ -9,6 +8,7 @@ from app.core.config import get_settings
 from app.schemas import SourceCitation
 from app.services.chunk_quality import assess_chunk_quality, is_form_or_survey_question
 from app.services.embeddings import get_embedding_model
+from app.services.llm import LLMGenerationError, LLMService
 from app.services.vector_store import get_qdrant_client
 from app.services.web_search import WebSearchResult, WebSearchService
 
@@ -28,7 +28,7 @@ class RAGService:
         self.settings = get_settings()
         self.embedding_model = get_embedding_model()
         self.qdrant = get_qdrant_client()
-        self.openai_client = OpenAI(api_key=self.settings.openai_api_key) if self.settings.openai_api_key else None
+        self.llm = LLMService()
         self.web_search = WebSearchService()
 
     def retrieve(self, question: str, top_k: int | None = None, filters: dict | None = None) -> list[RetrievedChunk]:
@@ -46,17 +46,21 @@ class RAGService:
             keyword_chunks = self.keyword_search(question, candidate_limit, {})
             merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
         reranked = rerank_chunks(question, merged)
-        compressed = [
-            RetrievedChunk(
-                text=compress_context(question, chunk.text),
-                citation=chunk.citation,
-                metadata=chunk.metadata,
-                vector_score=chunk.vector_score,
-                keyword_score=chunk.keyword_score,
-                rerank_score=chunk.rerank_score,
+        compressed = []
+        for chunk in reranked[:final_limit]:
+            compressed_text = compress_context(question, chunk.text)
+            if not compressed_text:
+                continue
+            compressed.append(
+                RetrievedChunk(
+                    text=compressed_text,
+                    citation=chunk.citation,
+                    metadata=chunk.metadata,
+                    vector_score=chunk.vector_score,
+                    keyword_score=chunk.keyword_score,
+                    rerank_score=chunk.rerank_score,
+                )
             )
-            for chunk in reranked[:final_limit]
-        ]
         return compressed
 
     def vector_search(
@@ -157,16 +161,27 @@ class RAGService:
             f"chunk {chunk.citation.chunk_index}\n{chunk.text}"
             for idx, chunk in enumerate(chunks, start=1)
         )
+        language_instruction = answer_language_instruction(question)
         return (
-            "You are a safe dental assistant. Answer only from the provided evidence. "
-            "Use only context that directly answers the user's question. Do not dump raw chunk text. "
-            "Ignore irrelevant survey, questionnaire, tick/cross, form, index, bibliography, or table-artifact content unless the user specifically asks about those forms. "
-            "Do not diagnose. Do not prescribe medicines. "
-            "If evidence is weak or insufficient, say: I do not have enough relevant evidence in the uploaded documents. "
-            "For severe pain, swelling, fever, pus, trauma, or bleeding, recommend urgent dental care. "
-            "Always include citations with document name and page number.\n\n"
-            f"Context:\n{context or 'No relevant context was retrieved.'}\n\n"
-            f"Question: {question}\n\n"
+            "Context:\n"
+            f"{context or 'No relevant context was retrieved.'}\n\n"
+            "User question:\n"
+            f"{question}\n\n"
+            "Task:\n"
+            "Answer the user question using only the context.\n\n"
+            "Rules:\n"
+            "1. Always follow the user's requested language exactly.\n"
+            "2. If the user asks for Roman Urdu, write Urdu/Hindi words using English letters only.\n"
+            "3. If Roman Urdu is requested, do not use Urdu script, Arabic script, Devanagari, or Persian script.\n"
+            "4. Example Roman Urdu style: Daanton ko peeche ki taraf move karna distalization kehlata hai.\n"
+            "5. Give a clear, helpful, AI-style explanation. Do not give a one-line answer unless the user asks for short answer.\n"
+            "6. Use headings or bullets when helpful.\n"
+            "7. Do not copy or dump raw context.\n"
+            "8. Do not write source names, page numbers, citations, or a Sources section. The backend shows sources separately.\n"
+            "9. If context is insufficient, say exactly: I do not have enough relevant evidence in the uploaded documents.\n"
+            "10. Do not show reasoning or thinking.\n"
+            "11. Do not diagnose or prescribe medicine.\n"
+            f"12. {language_instruction}\n\n"
             "Answer:"
         )
 
@@ -178,27 +193,52 @@ class RAGService:
             )
 
         prompt = self.build_prompt(question, chunks)
-        if not self.openai_client:
+        if not self.llm.is_configured:
             return self.generate_extract_answer(question, chunks)
 
         try:
-            response = self.openai_client.chat.completions.create(
-                model=self.settings.openai_model,
+            answer = self.llm.generate(
+                prompt,
                 temperature=0.2,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a dental RAG assistant. Ground every answer in retrieved context and "
-                            "include a brief safety caveat when the question asks for care decisions."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                system_prompt=rag_system_prompt(question),
             )
-            return response.choices[0].message.content.strip()
-        except OpenAIError:
+            return self.ensure_language_style(question, answer)
+        except LLMGenerationError:
+            if is_translation_or_language_request(question):
+                return generate_language_fallback_answer(question, chunks)
             return self.generate_extract_answer(question, chunks)
+
+    def ensure_language_style(self, question: str, answer: str) -> str:
+        cleaned = strip_model_sources(answer)
+        if not wants_roman_urdu(question) or not self.llm.is_configured:
+            return cleaned
+        prompt = (
+            "Rewrite the following answer into Roman Urdu only.\n\n"
+            "Rules:\n"
+            "- Use English letters only.\n"
+            "- Do not use Urdu script, Arabic script, Devanagari, or Persian script.\n"
+            "- Do not leave the answer in English.\n"
+            "- Use natural Pakistani Roman Urdu wording.\n"
+            "- Keep dental terms when needed, but explain them in Roman Urdu.\n"
+            "- Preserve the meaning.\n"
+            "- Do not add sources or citations.\n"
+            "- Do not show reasoning.\n\n"
+            f"Answer:\n{cleaned}\n\n"
+            "Roman Urdu:"
+        )
+        try:
+            return strip_model_sources(
+                self.llm.generate(
+                    prompt,
+                    temperature=0.1,
+                    system_prompt=(
+                        "You transliterate and rewrite dental explanations into Roman Urdu. "
+                        "Use English letters only. Never use Urdu or Arabic script."
+                    ),
+                )
+            )
+        except LLMGenerationError:
+            return cleaned
 
     def generate_hybrid_answer(
         self,
@@ -211,13 +251,8 @@ class RAGService:
                 "I could not find enough trusted web evidence for that question right now. "
                 "Please try again later or ask using the uploaded PDF sources."
             )
-        if not self.openai_client:
-            bullets = "\n".join(f"- {result.title}: {result.content[:280]}" for result in web_results[:3])
-            return (
-                "Trusted web sources found the following relevant information:\n\n"
-                f"{bullets}\n\n"
-                "Please verify the linked sources before using this for clinical decisions."
-            )
+        if not self.llm.is_configured:
+            return web_results_fallback_answer(web_results)
 
         pdf_context = "\n\n".join(
             f"[PDF {idx}] {chunk.citation.document_name}, page {chunk.citation.page_number}\n{chunk.text}"
@@ -228,29 +263,30 @@ class RAGService:
             for idx, result in enumerate(web_results, start=1)
         )
         prompt = (
-            "Answer the dental question using only the provided PDF and trusted web evidence. "
-            "Prefer uploaded PDFs for stable textbook knowledge, and use web evidence for current/latest information. "
-            "Do not diagnose or prescribe. If evidence is insufficient, say so. Include concise citations by source name.\n\n"
             f"PDF evidence:\n{pdf_context or 'No strong PDF evidence.'}\n\n"
             f"Trusted web evidence:\n{web_context}\n\n"
-            f"Question: {question}\n\n"
+            f"User question:\n{question}\n\n"
+            "Task:\n"
+            "Answer using only the PDF and trusted web evidence.\n\n"
+            "Rules:\n"
+            "1. Follow the user's requested language exactly.\n"
+            "2. If Roman Urdu is requested, use English letters only and do not use Urdu/Arabic script.\n"
+            "3. Do not write source names, page numbers, citations, or a Sources section. The backend shows sources separately.\n"
+            "4. Do not dump raw evidence.\n"
+            "5. If evidence is insufficient, say so.\n"
+            "6. Do not diagnose or prescribe.\n"
+            "7. Do not show reasoning.\n\n"
             "Answer:"
         )
         try:
-            response = self.openai_client.chat.completions.create(
-                model=self.settings.openai_model,
+            answer = self.llm.generate(
+                prompt,
                 temperature=0.2,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a safe dental assistant using trusted sources and clear citations.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                system_prompt=rag_system_prompt(question),
             )
-            return response.choices[0].message.content.strip()
-        except OpenAIError:
-            return self.generate_extract_answer(question, chunks)
+            return self.ensure_language_style(question, answer)
+        except LLMGenerationError:
+            return web_results_fallback_answer(web_results)
 
     def answer(
         self,
@@ -303,9 +339,13 @@ class RAGService:
         return answer, citations
 
     def generate_extract_answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
+        if is_translation_or_language_request(question):
+            return generate_language_fallback_answer(question, chunks)
+
         question_l = question.lower()
         context = " ".join(chunk.text for chunk in chunks)
         sentences = split_sentences(context)
+        definition_question = is_definition_question(question)
 
         if any(term in question_l for term in ["list", "name", "types", "diseases", "conditions"]):
             items = extract_oral_disease_items(context)
@@ -329,6 +369,8 @@ class RAGService:
         ranked = rank_sentences(sentences, keywords)
         selected = ranked[:4] if ranked else sentences[:3]
         selected = [sentence for sentence in selected if sentence.strip()]
+        if definition_question:
+            selected = [sentence for sentence in selected if has_definition_signal(sentence)]
         if not selected:
             return (
                 "I do not have enough relevant evidence in the uploaded documents to answer that directly. "
@@ -348,7 +390,7 @@ class RAGService:
 def split_sentences(text: str) -> list[str]:
     cleaned = clean_context_text(text)
     parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", cleaned)
-    return [part.strip() for part in parts if len(part.strip()) > 25]
+    return [part.strip() for part in parts if len(part.strip()) > 25 and not is_noisy_sentence(part)]
 
 
 def answer_conversational_prompt(question: str) -> str | None:
@@ -409,7 +451,37 @@ def answer_basic_dental_definition(question: str) -> str | None:
             "Good oral health is supported by brushing with fluoride toothpaste, cleaning between teeth, limiting sugary foods and drinks, "
             "avoiding tobacco, and getting regular dental checkups."
         )
+    if "teeth whitening" in normalized or "tooth whitening" in normalized or "dental whitening" in normalized:
+        return (
+            "Teeth whitening means lightening the color of teeth by reducing stains or discoloration. "
+            "It may be done with dentist-supervised bleaching products or other professional methods, depending on the cause of staining.\n\n"
+            "It is not suitable for every case. Fillings, crowns, veneers, cavities, gum disease, sensitivity, or deep internal discoloration can affect the result. "
+            "A dentist should check your teeth first so the whitening method is safe and realistic for your condition."
+        )
     return None
+
+
+def is_definition_question(question: str) -> bool:
+    normalized = re.sub(r"[^a-zA-Z0-9\s?]", " ", question.lower()).strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    definition_patterns = ("what is", "what are", "define", "meaning of", "what do you mean by")
+    return any(normalized.startswith(pattern) for pattern in definition_patterns)
+
+
+def has_definition_signal(sentence: str) -> bool:
+    normalized = re.sub(r"\s+", " ", sentence.lower()).strip()
+    definition_signals = [
+        " is ",
+        " are ",
+        " means ",
+        " mean ",
+        " refers to ",
+        " defined as ",
+        " definition ",
+        " consists of ",
+        " includes ",
+    ]
+    return any(signal in f" {normalized} " for signal in definition_signals)
 
 
 def is_insufficient_answer(answer: str) -> bool:
@@ -425,6 +497,121 @@ def is_current_info_question(question: str) -> bool:
         "recent study", "current recommendation",
     ]
     return any(trigger in normalized for trigger in triggers)
+
+
+def answer_language_instruction(question: str) -> str:
+    normalized = question.lower()
+    if "roman urdu" in normalized or "hinglish" in normalized:
+        return (
+            "Roman Urdu means Urdu/Hindi words written with English letters only. "
+            "Never use Urdu script or Arabic script for Roman Urdu."
+        )
+    if "urdu" in normalized:
+        return "Respond in Urdu/Roman Urdu as requested by the user, using simple patient-friendly wording."
+    return "Respond in the same language as the user's question when a language is explicitly requested."
+
+
+def rag_system_prompt(question: str) -> str:
+    roman_rule = ""
+    if wants_roman_urdu(question):
+        roman_rule = (
+            "The user requested Roman Urdu. You must write Urdu/Hindi words using English letters only. "
+            "Do not use Urdu script, Arabic script, Devanagari, or Persian script. "
+            "Example: Daanton ko peeche ki taraf move karna distalization kehlata hai. "
+        )
+    return (
+        "You are Dental AI, a safe dental RAG assistant. "
+        "Use retrieved context only. Do not copy raw source text. "
+        "Give a clear, helpful explanation with enough detail for the user's question. "
+        "Do not write citations, source names, page numbers, or a Sources section because the backend shows citations separately. "
+        "Do not show your reasoning or thinking process. "
+        "Do not diagnose or prescribe medicine. "
+        f"{roman_rule}"
+    )
+
+
+def is_translation_or_language_request(question: str) -> bool:
+    normalized = question.lower()
+    return any(
+        phrase in normalized
+        for phrase in [
+            "translate",
+            "roman urdu",
+            "urdu",
+            "hinglish",
+            "in hindi",
+            "in roman",
+        ]
+    )
+
+
+def web_results_fallback_answer(web_results: list[WebSearchResult]) -> str:
+    bullets = "\n".join(
+        f"- {result.title}: {result.content[:360].strip()}"
+        for result in web_results[:3]
+        if result.content.strip()
+    )
+    if not bullets:
+        return (
+            "I found trusted web sources, but they did not include enough readable content to answer reliably. "
+            "Please open the linked sources or try a more specific question."
+        )
+    return (
+        "The configured LLM is not available right now, so I cannot generate a polished clinical explanation. "
+        "However, trusted web sources found this relevant information:\n\n"
+        f"{bullets}\n\n"
+        "Please verify the linked sources and consult a licensed dental professional for diagnosis or treatment decisions."
+    )
+
+
+def generate_language_fallback_answer(question: str, chunks: list[RetrievedChunk]) -> str:
+    if wants_roman_urdu(question):
+        return (
+            "LLM abhi available nahi hai, is liye main is Roman Urdu request ka reliable jawab generate nahi kar sakta. "
+            "Qwen/Ollama connect hone ke baad main uploaded dental sources se proper Roman Urdu answer dunga."
+        )
+
+    return (
+        "I could not reach the configured LLM to produce a reliable answer for this language request. "
+        "Please try again after Qwen/Ollama is connected."
+    )
+
+
+def wants_roman_urdu(question: str) -> bool:
+    normalized = question.lower()
+    return "roman urdu" in normalized or "hinglish" in normalized or "in roman" in normalized
+
+
+def contains_non_roman_script(text: str) -> bool:
+    return bool(re.search(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u097F]", text))
+
+
+def strip_model_sources(answer: str) -> str:
+    lines = answer.strip().splitlines()
+    kept: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        lower = stripped.lower()
+        if lower in {"sources:", "source:", "citations:", "references:"}:
+            break
+        if re.match(r"^(source|sources|citation|citations|reference|references)\s*:", lower):
+            break
+        kept.append(line)
+    cleaned = "\n".join(kept).strip()
+    cleaned = re.sub(r"\((?:[^()]*?p(?:age)?\.?\s*\d+|[^()]*?page\s*\d+)[^()]*?\)", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def requested_translation_topic(question: str) -> str:
+    cleaned = re.sub(
+        r"\b(translate|into|in|roman|urdu|hinglish|the|significance|of)\b",
+        " ",
+        question,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"[^a-zA-Z0-9\s-]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or "is concept"
 
 
 def question_keywords(question: str) -> set[str]:
@@ -452,6 +639,21 @@ def rank_sentences(sentences: list[str], keywords: set[str]) -> list[str]:
         return matches * 3 + dental_boost, -len(sentence)
 
     return [sentence for sentence in sorted(sentences, key=score, reverse=True) if score(sentence)[0] > 0]
+
+
+def is_noisy_sentence(sentence: str) -> bool:
+    cleaned = sentence.strip()
+    lower = cleaned.lower()
+    if len(cleaned) > 450:
+        return True
+    if re.search(r"~|<{2,}|>{2,}|\"{2,}", cleaned):
+        return True
+    if re.search(r"\bfig\.?\s*(er|if|and|,)|\bcourtesy\s+dr\.|\bocclusal views\b", lower):
+        return True
+    if len(re.findall(r"\b[A-Za-z]{1,2}\b", cleaned)) > 12:
+        return True
+    quality = assess_chunk_quality(cleaned)
+    return quality.is_noisy or quality.quality_score < 0.55
 
 
 def build_qdrant_filter(filters: dict | None) -> qmodels.Filter | None:
@@ -581,13 +783,13 @@ def compress_context(question: str, text: str) -> str:
     cleaned = clean_context_text(text)
     sentences = split_sentences(cleaned)
     if not sentences:
-        return cleaned[:900]
+        return ""
     ranked = rank_sentences(sentences, terms)
-    selected = ranked[:5] if ranked else sentences[:3]
+    selected = ranked[:5] if ranked else []
     compressed = " ".join(selected).strip()
     if len(compressed) > 1000:
         compressed = compressed[:1000].rsplit(" ", 1)[0] + "."
-    return compressed or cleaned[:900]
+    return compressed
 
 
 def clean_context_text(text: str) -> str:

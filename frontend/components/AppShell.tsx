@@ -35,8 +35,10 @@ export function AppShell({ title, subtitle, children }: {
   const pathname = usePathname();
   const { token, user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   // Fetch recent sessions from API
   const refreshSessions = useCallback(async () => {
@@ -53,6 +55,10 @@ export function AppShell({ title, subtitle, children }: {
     refreshSessions();
   }, [refreshSessions]);
 
+  useEffect(() => {
+    setActiveSessionId(new URLSearchParams(window.location.search).get("session_id"));
+  }, [pathname]);
+
   const handleOpenModal = (modalName: string) => {
     if (modalName === "admin") {
       router.push("/admin");
@@ -62,10 +68,12 @@ export function AppShell({ title, subtitle, children }: {
   };
 
   const handleSelectSession = (id: string) => {
+    setActiveSessionId(id);
     router.push(`/chat?session_id=${id}`);
   };
 
   const handleNewChat = () => {
+    setActiveSessionId(null);
     router.push("/chat");
   };
 
@@ -90,15 +98,17 @@ export function AppShell({ title, subtitle, children }: {
         <Sidebar 
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
           sessions={sessions}
-          activeSessionId={null} // Active state can be managed individually by page queries
+          activeSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
           onNewChat={handleNewChat}
           onOpenModal={handleOpenModal}
         />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        <div className={`flex-1 flex flex-col h-full min-w-0 overflow-hidden relative transition-[padding-left] duration-300 ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-[18rem]"}`}>
           
           {/* Header Bar */}
           <ChatHeader onMenuToggle={() => setSidebarOpen(true)} />

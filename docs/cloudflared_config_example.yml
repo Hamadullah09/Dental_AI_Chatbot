@@ -1,0 +1,13 @@
+# Copy this file to .cloudflared/config.yml and replace:
+# - <TUNNEL-UUID> with the UUID printed by cloudflared tunnel create
+# - <USER> with your Windows username, or use the exact credentials JSON path printed by cloudflared
+
+tunnel: <TUNNEL-UUID>
+credentials-file: C:\Users\<USER>\.cloudflared\<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: demo.wtechx.tech
+    service: http://localhost:3001
+  - hostname: api.wtechx.tech
+    service: http://localhost:8002
+  - service: http_status:404
