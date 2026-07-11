@@ -3,25 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --dental-darkBg: #f9f9fb;
-  --dental-sidebar: #f3f3f6;
+  --dental-darkBg: #f6f8fb;
+  --dental-sidebar: #eef4f8;
   --dental-card: #ffffff;
-  --dental-border: #e4e4e7;
-  --dental-textPrimary: #09090b;
-  --dental-textSecondary: #71717a;
-  --dental-accent: #14b8a6;
-  --dental-accentHover: #0d9488;
+  --dental-elevated: #fbfdff;
+  --dental-input: #ffffff;
+  --dental-muted: #eaf1f5;
+  --dental-border: #d7e1e7;
+  --dental-borderStrong: #b7c8d2;
+  --dental-textPrimary: #14212b;
+  --dental-textSecondary: #5d6d78;
+  --dental-textMuted: #81909a;
+  --dental-accent: #0f9f8f;
+  --dental-accentHover: #0b7f73;
+  --dental-accentSoft: #dff8f4;
+  --dental-userBubble: #16313c;
+  --dental-userBubbleText: #ffffff;
+  --dental-shadow: 0 16px 42px rgba(20, 33, 43, 0.11);
 }
 
 html[data-theme="dark"] {
   --dental-darkBg: #101010;
   --dental-sidebar: #171717;
   --dental-card: #212121;
+  --dental-elevated: #2a2a2a;
+  --dental-input: #111111;
+  --dental-muted: #292929;
   --dental-border: #303030;
+  --dental-borderStrong: #3f3f46;
   --dental-textPrimary: #f4f4f5;
   --dental-textSecondary: #a1a1aa;
+  --dental-textMuted: #71717a;
   --dental-accent: #14b8a6;
   --dental-accentHover: #0d9488;
+  --dental-accentSoft: rgba(20, 184, 166, 0.14);
+  --dental-userBubble: #2f2f2f;
+  --dental-userBubbleText: #ffffff;
+  --dental-shadow: 0 18px 52px rgba(0, 0, 0, 0.35);
 }
 
 @layer base {
@@ -41,11 +59,11 @@ html[data-theme="dark"] {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #666;
+  background: var(--dental-borderStrong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #888;
+  background: var(--dental-textMuted);
 }
 
 /* Typing Indicator Animation */

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { getCurrentUser } from "./api";
 import type { AuthResponse, User } from "./types";
 
 type AuthContextValue = {
@@ -19,12 +20,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setToken(localStorage.getItem("dental_ai_token"));
-    const storedUser = localStorage.getItem("dental_ai_user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    let cancelled = false;
+
+    async function hydrateAuth() {
+      try {
+        const storedToken = localStorage.getItem("dental_ai_token");
+        if (!storedToken) return;
+
+        const storedUser = localStorage.getItem("dental_ai_user");
+        if (storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser) as User;
+            if (!cancelled) {
+              setUser(parsed);
+            }
+          } catch {
+            localStorage.removeItem("dental_ai_user");
+          }
+        }
+
+        if (!cancelled) {
+          setToken(storedToken);
+        }
+
+        const verifiedUser = await getCurrentUser(storedToken);
+        if (!cancelled) {
+          setUser(verifiedUser);
+          localStorage.setItem("dental_ai_user", JSON.stringify(verifiedUser));
+        }
+      } catch {
+        localStorage.removeItem("dental_ai_token");
+        localStorage.removeItem("dental_ai_user");
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsReady(true);
+        }
+      }
     }
-    setIsReady(true);
+
+    hydrateAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleAuthExpired() {
+      setToken(null);
+      setUser(null);
+    }
+
+    window.addEventListener("dental_ai_auth_expired", handleAuthExpired);
+    return () => window.removeEventListener("dental_ai_auth_expired", handleAuthExpired);
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({

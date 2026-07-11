@@ -24,11 +24,26 @@ export type SourceCitation = {
   score: number | null;
 };
 
+export type VisualCitation = {
+  visual_id: string;
+  document_id: string | null;
+  document_name: string;
+  page_number: number | null;
+  visual_type: "figure" | "diagram" | "chart" | "flowchart" | "table" | "page_snapshot" | "unknown" | string;
+  image_path: string;
+  image_url: string;
+  caption_text?: string | null;
+  generated_description?: string | null;
+  score: number | null;
+};
+
 export type ChatResponse = {
   answer: string;
   session_id: string;
   message_id: string;
   sources: SourceCitation[];
+  visuals: VisualCitation[];
+  answer_mode: "rag_grounded" | "general_fallback" | "insufficient_evidence" | "web_augmented" | "conversational" | "openai_backup" | string;
   disclaimer: string;
 };
 
@@ -37,12 +52,14 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   sources: SourceCitation[];
+  visuals?: VisualCitation[];
   created_at: string;
 };
 
 export type ChatSession = {
   id: string;
   title: string | null;
+  archived?: boolean;
   created_at: string;
   updated_at: string;
   messages: Message[];

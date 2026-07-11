@@ -45,6 +45,7 @@ def test_chat_saves_history_and_sources(client, monkeypatch):
     data = response.json()
     assert data["sources"][0]["document_name"] == "Dental Guide.pdf"
     assert data["sources"][0]["page_number"] == 12
+    assert data["answer_mode"] == "rag_grounded"
     assert data["disclaimer"]
 
     sessions = client.get(

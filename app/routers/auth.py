@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
+from app.deps import get_current_user
 from app.models import User, UserRole
 from app.schemas import LoginRequest, Token, UserCreate, UserRead
 
@@ -20,6 +21,11 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
     role = payload.role
     if role == UserRole.admin:
         raise HTTPException(status_code=403, detail="Admin accounts are created by system configuration only")
+    if role == UserRole.dentist:
+        raise HTTPException(
+            status_code=403,
+            detail="Dentist accounts require credential verification by an admin before clinical access is enabled.",
+        )
 
     user = User(
         email=payload.email.lower(),
@@ -41,3 +47,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user.id, {"role": user.role.value})
     return Token(access_token=token, user=UserRead.model_validate(user))
+
+
+@router.get("/me", response_model=UserRead)
+def me(current_user: User = Depends(get_current_user)) -> UserRead:
+    return UserRead.model_validate(current_user)

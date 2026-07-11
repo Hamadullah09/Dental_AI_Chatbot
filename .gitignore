@@ -1,13 +1,19 @@
 .env
+*.env
+!.env.example
 __pycache__/
 *.pyc
 .pytest_cache/
 dental_ai.db
+*.sqlite
+*.sqlite3
 backend.log
 backend.err.log
 qdrant_storage/
 uploaded_docs/*
 !uploaded_docs/.gitkeep
+uploads/
+knowledge_base/
 chunks.jsonl
 all_chunks.jsonl
 draft_dental_qa.jsonl
@@ -19,6 +25,14 @@ tools/
 .cloudflared/
 *.db-shm
 *.db-wal
+node_modules/
+/package.json
+/package-lock.json
+.next/
+out/
+*.tsbuildinfo
+cleanup_reports*/
+0.11.0
 
 .venv/
 .venv_run/

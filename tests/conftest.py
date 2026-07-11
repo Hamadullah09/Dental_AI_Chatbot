@@ -55,14 +55,20 @@ def register_user(client: TestClient, email: str, role: str = "patient") -> dict
 
 def create_admin_user(email: str = "admin@example.com") -> dict:
     with SessionLocal() as db:
-        user = User(
-            email=email,
-            full_name="Admin User",
-            hashed_password=hash_password("strong-password"),
-            role=UserRole.admin,
-            is_active=True,
-        )
-        db.add(user)
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                email=email,
+                full_name="Admin User",
+                hashed_password=hash_password("strong-password"),
+                role=UserRole.admin,
+                is_active=True,
+            )
+            db.add(user)
+        else:
+            user.role = UserRole.admin
+            user.hashed_password = hash_password("strong-password")
+            user.is_active = True
         db.commit()
         db.refresh(user)
         token = create_access_token(user.id, {"role": user.role.value})

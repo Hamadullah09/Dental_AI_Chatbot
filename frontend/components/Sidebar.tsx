@@ -38,6 +38,8 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
   onOpenModal: (modalName: string) => void;
+  onArchiveSession: (id: string) => Promise<void>;
+  onDeleteSession: (id: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -50,6 +52,8 @@ export function Sidebar({
   onSelectSession,
   onNewChat,
   onOpenModal,
+  onArchiveSession,
+  onDeleteSession,
 }: SidebarProps) {
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -206,9 +210,10 @@ export function Sidebar({
     }));
   }
 
-  function deleteSession(sessionId: string) {
-    const confirmed = window.confirm("Remove this chat from the sidebar?");
+  async function archiveSessionAction(sessionId: string) {
+    const confirmed = window.confirm("Archive this chat?");
     if (!confirmed) return;
+    await onArchiveSession(sessionId);
     persistPrefs((current) => ({
       ...current,
       hiddenSessionIds: current.hiddenSessionIds.includes(sessionId)
@@ -216,9 +221,18 @@ export function Sidebar({
         : [...current.hiddenSessionIds, sessionId],
       pinnedSessionIds: current.pinnedSessionIds.filter((id) => id !== sessionId),
     }));
-    if (activeSessionId === sessionId) {
-      handleNewChatClick();
-    }
+  }
+
+  async function deleteSessionAction(sessionId: string) {
+    const confirmed = window.confirm("Delete this chat permanently?");
+    if (!confirmed) return;
+    await onDeleteSession(sessionId);
+    persistPrefs((current) => ({
+      ...current,
+      hiddenSessionIds: current.hiddenSessionIds.filter((id) => id !== sessionId),
+      pinnedSessionIds: current.pinnedSessionIds.filter((id) => id !== sessionId),
+      customTitles: Object.fromEntries(Object.entries(current.customTitles).filter(([id]) => id !== sessionId)),
+    }));
   }
 
   const searchBarVisible = isSearchExpanded || normalizedQuery.length > 0;
@@ -286,8 +300,8 @@ export function Sidebar({
         key: "archive",
         label: "Archive",
         icon: Archive,
-        onClick: () => {
-          deleteSession(session.id);
+        onClick: async () => {
+          await archiveSessionAction(session.id);
           setOpenActionMenuId(null);
         },
       },
@@ -296,8 +310,8 @@ export function Sidebar({
         label: "Delete",
         icon: Trash2,
         danger: true,
-        onClick: () => {
-          deleteSession(session.id);
+        onClick: async () => {
+          await deleteSessionAction(session.id);
           setOpenActionMenuId(null);
         },
       },

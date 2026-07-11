@@ -1,10 +1,20 @@
-import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, DocumentIngestionLog, DocumentItem, UserRole } from "./types";
+import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, DocumentIngestionLog, DocumentItem, User, UserRole } from "./types";
 
 type ApiOptions = RequestInit & {
   token?: string | null;
+  timeoutMs?: number;
 };
 
+const CHAT_GENERATION_TIMEOUT_MS = Number(
+  process.env.NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS || process.env.NEXT_PUBLIC_CHAT_BACKEND_TIMEOUT_MS || 180000
+);
+const OPENAI_BACKUP_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_OPENAI_BACKUP_TIMEOUT_MS || 30000);
+const BACKUP_OPENAI_ENDPOINT = (process.env.NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT || "/api/openai-fallback").trim();
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+
+function getApiBaseUrl() {
+  return API_BASE_URL;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -20,19 +30,58 @@ export function isInvalidTokenError(error: unknown) {
   return error instanceof ApiError && error.status === 401;
 }
 
+function clearStaleAuth(path: string, detail: unknown) {
+  if (typeof window === "undefined" || path.startsWith("/auth/")) return;
+  const message = typeof detail === "string" ? detail : String((detail as { detail?: unknown } | null)?.detail || "");
+  const normalized = message.toLowerCase();
+  if (!normalized.includes("invalid token") && !normalized.includes("authentication required")) return;
+
+  localStorage.removeItem("dental_ai_token");
+  localStorage.removeItem("dental_ai_user");
+  window.dispatchEvent(new Event("dental_ai_auth_expired"));
+  window.location.replace("/login");
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const { token, timeoutMs, ...fetchOptions } = options;
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (options.token) {
-    headers.set("Authorization", `Bearer ${options.token}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
-
-  const response = await fetch(`${API_BASE_URL}/api${path}`, {
-    ...options,
-    headers
+  let timeoutId: number | null = null;
+  const requestPromise = fetch(`${getApiBaseUrl()}/api${path}`, {
+    ...fetchOptions,
+    headers,
+    signal: fetchOptions.signal
   });
+  const timeoutPromise = timeoutMs
+    ? new Promise<Response>((_, reject) => {
+      timeoutId = window.setTimeout(
+        () => reject(new ApiError("Dental AI backend did not respond quickly enough.", 0)),
+        timeoutMs
+      );
+    })
+    : null;
+
+  let response: Response;
+  try {
+    response = await (timeoutPromise ? Promise.race([requestPromise, timeoutPromise]) : requestPromise);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(
+      error instanceof Error ? `Could not reach the Dental AI backend: ${error.message}` : "Could not reach the Dental AI backend.",
+      0
+    );
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 
   const contentType = response.headers.get("content-type") || "";
   const data = response.status === 204
@@ -41,7 +90,13 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
       ? await response.json()
       : await response.text();
   if (!response.ok) {
-    throw new ApiError(typeof data === "string" ? data : data?.detail || "Request failed", response.status);
+    clearStaleAuth(path, data);
+    throw new ApiError(
+      response.status === 401 && !path.startsWith("/auth/")
+        ? "Session expired. Please sign in again."
+        : typeof data === "string" ? data : data?.detail || "Request failed",
+      response.status
+    );
   }
   return data as T;
 }
@@ -65,17 +120,83 @@ export function login(input: { email: string; password: string }) {
   });
 }
 
-export function sendChat(input: {
+export function getCurrentUser(token: string) {
+  return request<User>("/auth/me", { token });
+}
+
+function shouldUseOpenAiBackup(error: unknown) {
+  return error instanceof ApiError && (error.status === 0 || error.status >= 500);
+}
+
+async function sendOpenAiBackupChat(input: {
+  question: string;
+  session_id?: string | null;
+}) {
+  let timeoutId: number | null = null;
+  const backupRequest = fetch(BACKUP_OPENAI_ENDPOINT || "/api/openai-fallback", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      question: input.question,
+      session_id: input.session_id || null
+    }),
+  });
+  const timeoutRequest = new Promise<Response>((_, reject) => {
+    timeoutId = window.setTimeout(
+      () => reject(new ApiError("OpenAI backup did not respond quickly enough.", 0)),
+      OPENAI_BACKUP_TIMEOUT_MS
+    );
+  });
+
+  let response: Response;
+  try {
+    response = await Promise.race([backupRequest, timeoutRequest]);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(
+      error instanceof Error ? `OpenAI backup failed: ${error.message}` : "OpenAI backup failed.",
+      0
+    );
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await response.json() : await response.text();
+  if (!response.ok) {
+    throw new ApiError(typeof data === "string" ? data : data?.detail || "OpenAI backup failed", response.status);
+  }
+  return data as ChatResponse;
+}
+
+export async function sendChat(input: {
   question: string;
   session_id?: string | null;
   document_id?: string | null;
   search_web?: boolean;
 }, token: string) {
-  return request<ChatResponse>("/chat", {
-    method: "POST",
-    token,
-    body: JSON.stringify(input)
-  });
+  try {
+    return await request<ChatResponse>("/chat", {
+      method: "POST",
+      token,
+      timeoutMs: CHAT_GENERATION_TIMEOUT_MS,
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (!shouldUseOpenAiBackup(error)) {
+      throw error;
+    }
+    try {
+      return await sendOpenAiBackupChat(input);
+    } catch (backupError) {
+      throw backupError instanceof Error ? backupError : error;
+    }
+  }
 }
 
 export function uploadChatDocument(file: File, token: string) {
@@ -95,6 +216,20 @@ export function getChatDocument(documentId: string, token: string) {
 
 export function getSessions(token: string) {
   return request<ChatSession[]>("/chat/sessions", { token });
+}
+
+export function archiveSession(sessionId: string, token: string) {
+  return request<void>(`/chat/sessions/${sessionId}/archive`, {
+    method: "POST",
+    token
+  });
+}
+
+export function deleteSession(sessionId: string, token: string) {
+  return request<void>(`/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+    token
+  });
 }
 
 export function sendFeedback(input: { message_id: string; rating: number; comment?: string }, token: string) {
@@ -174,7 +309,7 @@ export function generateDataset(token: string, input: {
 }
 
 export async function downloadDatasetReviewCsv(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/admin/dataset/download`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/admin/dataset/download`, {
     headers: {
       Authorization: `Bearer ${token}`
     }

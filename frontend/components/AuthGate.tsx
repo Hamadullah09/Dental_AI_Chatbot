@@ -42,7 +42,7 @@ export function AuthGate({ children, adminOnly = false }: {
         : "Checking access";
 
     return (
-      <main className="flex min-h-screen w-screen items-center justify-center bg-dental-darkBg px-6 text-dental-textPrimary">
+      <main className="flex min-h-dvh w-screen items-center justify-center bg-dental-darkBg px-6 text-dental-textPrimary">
         <div className="flex w-full max-w-sm flex-col items-center text-center fade-in">
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-dental-border bg-dental-card shadow-lg">
             <span className="text-xl font-extrabold text-dental-accent">DG</span>

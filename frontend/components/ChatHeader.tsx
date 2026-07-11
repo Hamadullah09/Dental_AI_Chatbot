@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, Menu, Moon, MoreHorizontal, Pin, Share2, Sun, Trash2 } from "lucide-react";
+import { Archive, Menu, Moon, MoreHorizontal, Share2, Sun, Trash2 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 
 interface ChatHeaderProps {
+  activeSessionId: string | null;
   onMenuToggle: () => void;
+  onArchiveSession: (id: string) => Promise<void>;
+  onDeleteSession: (id: string) => Promise<void>;
 }
 
-export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
+export function ChatHeader({ activeSessionId, onMenuToggle, onArchiveSession, onDeleteSession }: ChatHeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -20,6 +23,20 @@ export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
       return;
     }
     await navigator.clipboard?.writeText(url);
+  }
+
+  async function handleArchive() {
+    if (!activeSessionId) return;
+    if (!window.confirm("Archive this chat?")) return;
+    await onArchiveSession(activeSessionId);
+    setIsMenuOpen(false);
+  }
+
+  async function handleDelete() {
+    if (!activeSessionId) return;
+    if (!window.confirm("Delete this chat permanently?")) return;
+    await onDeleteSession(activeSessionId);
+    setIsMenuOpen(false);
   }
 
   return (
@@ -66,14 +83,14 @@ export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
         {isMenuOpen && (
           <div className="absolute right-0 top-12 z-50 w-64 rounded-2xl border border-dental-border bg-dental-card p-2 shadow-2xl">
             {[
-              { icon: Pin, label: "Pin chat" },
-              { icon: Archive, label: "Archive" },
+              { icon: Archive, label: "Archive", disabled: !activeSessionId, onClick: handleArchive },
             ].map((item) => (
               <button
                 key={item.label}
                 type="button"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary transition-colors hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60"
+                onClick={item.onClick}
+                disabled={item.disabled}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary transition-colors hover:bg-dental-border disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60"
               >
                 <item.icon className="h-4 w-4 text-dental-textSecondary" />
                 {item.label}
@@ -81,8 +98,9 @@ export function ChatHeader({ onMenuToggle }: ChatHeaderProps) {
             ))}
             <button
               type="button"
-              onClick={() => setIsMenuOpen(false)}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+              onClick={handleDelete}
+              disabled={!activeSessionId}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
             >
               <Trash2 className="h-4 w-4" />
               Delete

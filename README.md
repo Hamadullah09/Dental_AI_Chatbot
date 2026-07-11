@@ -55,6 +55,8 @@ Required for production-like use:
 ```bash
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 OPENAI_API_KEY=your-openai-api-key
+BACKUP_OPENAI_API_KEY=your-openai-api-key
+BACKUP_OPENAI_MODEL=gpt-4o-mini
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3:14b
@@ -89,6 +91,22 @@ Keep this value only in `.env`. Never commit it to GitHub.
 
 For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
 
+Optional frontend backup mode:
+
+```bash
+BACKUP_OPENAI_API_KEY=your-openai-api-key
+BACKUP_OPENAI_MODEL=gpt-4o-mini
+BACKUP_OPENAI_TIMEOUT_MS=3000
+NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT=
+NEXT_PUBLIC_BACKEND_HEALTH_TIMEOUT_MS=1500
+NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS=60000
+NEXT_PUBLIC_OPENAI_BACKUP_TIMEOUT_MS=3000
+```
+
+Before chat submission, the browser checks `/api/health` for up to `NEXT_PUBLIC_BACKEND_HEALTH_TIMEOUT_MS`. If health fails, it immediately uses backup mode. If health passes, the primary `/api/chat` request can run for up to `NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS`, so a healthy but slow Qwen3:14B generation is not mistaken for a failure.
+
+For local development, backup mode uses the Next.js route `/api/openai-fallback`. For Expo or production, deploy an independent serverless backup endpoint and set `NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT` to that URL. Backup answers are labeled as general dental guidance, return `answer_mode="openai_backup"`, and always use `sources=[]` so no uploaded-document citations are faked. If OpenAI backup is not configured, unreachable, or times out, the UI returns an instant `answer_mode="instant_backup_unavailable"` safety response instead of spinning.
+
 Optional trusted web search:
 
 ```bash
@@ -98,6 +116,28 @@ WEB_SEARCH_TRUSTED_DOMAINS=who.int,cdc.gov,nih.gov,ncbi.nlm.nih.gov,nhs.uk,ada.o
 ```
 
 Web search does not run automatically. The chat UI sends online search requests only when the user enables the web-search toggle. With the toggle off, the chatbot uses local uploaded/PDF knowledge only and says when it does not have enough evidence.
+
+Optional RAG quality modes:
+
+```bash
+RAG_MODE=simple
+ALLOW_GENERAL_FALLBACK=true
+ENABLE_MEMORY=true
+ENABLE_QUERY_REWRITING=true
+ENABLE_ADJACENT_CHUNK_EXPANSION=true
+ENABLE_HYDE=false
+ENABLE_SELF_CHECK=false
+ENABLE_BGE_RERANKER=false
+BGE_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+ENABLE_MULTIMODAL_RAG=true
+EXTRACTED_VISUALS_DIR=uploads/extracted_visuals
+VISUAL_MIN_RELEVANCE_SCORE=0.95
+RETRIEVAL_MIN_RELEVANCE_SCORE=1.1
+MULTI_QUERY_MAX_VARIANTS=4
+OLLAMA_TOP_P=0.8
+```
+
+Supported `RAG_MODE` values are `simple`, `memory`, `multi_query`, `hyde`, `adaptive`, `corrective`, `self_rag`, and `agentic`. The app still starts in stable simple mode by default, with clean chunk filtering, query rewriting, relevance scoring, strict Qwen prompting, adjacent chunk expansion, multimodal visual retrieval, and clearly labeled fallback answers. BGE reranking is optional and only runs when `ENABLE_BGE_RERANKER=true` and the reranker model is available. See `docs/RAG_EVOLUTION_ROADMAP.md` and `docs/MULTIMODAL_RAG.md` for the staged RAG upgrade notes.
 
 3. Start the stack.
 
@@ -150,6 +190,32 @@ EMBEDDING_BATCH_SIZE=64
 VECTOR_UPSERT_BATCH_SIZE=128
 ```
 
+### Fast Local Qdrant Server Mode
+
+Local file-mode Qdrant (`QDRANT_LOCAL_PATH=qdrant_storage`) is convenient for small demos, but it becomes very slow once the collection grows past roughly 20,000 points. For retrieval tuning and the 200-question benchmark, run Qdrant as a Docker server and point the backend to HTTP Qdrant instead.
+
+Start Qdrant only:
+
+```powershell
+.\scripts\start_qdrant_docker.ps1
+```
+
+Migrate the clean reviewed corpus into the Docker Qdrant server without overwriting the old local collection:
+
+```powershell
+.\scripts\migrate_clean_qdrant_to_docker.ps1 -ReplaceTarget
+```
+
+Then set the backend environment to use the server collection:
+
+```bash
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_LOCAL_PATH=
+QDRANT_COLLECTION=dental_docs_clean
+```
+
+The migration script rebuilds `dental_docs_clean` from SQL `documents`, `document_chunks`, and `document_visuals`, keeping only reviewed/high or medium trust records, clean text chunks, and indexed visuals. The old local `dental_docs` collection remains untouched.
+
 For scanned/image-only PDFs, install OCR system tools and configure paths when Windows cannot find them automatically:
 
 ```bash
@@ -194,21 +260,43 @@ python ingest.py
 The script stores document and chunk metadata in SQL and vectors in Qdrant. Each vector payload includes:
 
 - `text`
+- `chunk_id`
 - `document_id`
 - `document_name`
+- `canonical_document_title`
 - `book_title`
+- `author`
 - `author_or_source`
+- `publisher`
 - `year`
 - `edition`
 - `document_type`
 - `trust_level`
 - `review_status`
 - `specialty`
+- `dental_specialty`
+- `topic`
+- `difficulty_level`
 - `language`
 - `file_hash`
+- `content_hash`
+- `section_title`
+- `chapter_title`
+- `quality_score`
+- `is_noisy`
+- `noise_reasons`
 - `source`
 - `page_number`
 - `chunk_index`
+
+When `ENABLE_MULTIMODAL_RAG=true`, PDF ingestion also extracts page snapshots, embedded images, figure regions, and tables into `uploads/extracted_visuals/{document_id}/`, stores metadata in `document_visuals`, and indexes visual captions/descriptions in Qdrant with `payload_type="visual"`.
+
+Visual maintenance scripts:
+
+```bash
+python scripts/extract_pdf_visuals.py
+python scripts/rebuild_visual_index.py
+```
 
 ## Dataset Q&A Generation
 
@@ -244,13 +332,29 @@ Run:
 python scripts/evaluate_rag.py --dataset docs/evaluation_dataset.jsonl
 ```
 
+To generate a larger retrieval benchmark from retained chunks:
+
+```bash
+python scripts/build_retrieval_benchmark.py --output docs/retrieval_benchmark_200.jsonl --limit 200 --text-count 110 --visual-count 50 --table-count 20 --negative-count 20
+python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --json
+```
+
 For machine-readable output:
 
 ```bash
 python scripts/evaluate_rag.py --json
 ```
 
-The evaluator reports pass rate, expected-term recall, citation rate, and source match rate. Use this after uploading approved dental PDFs to compare retrieval changes.
+For fast smoke tuning, filter by case type:
+
+```bash
+python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type text --max-cases 20 --json
+python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type visual --max-cases 10 --json
+python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type table_chart --max-cases 10 --json
+python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type negative_no_visual --max-cases 10 --json
+```
+
+The generated benchmark is categorized into text retrieval, visual retrieval, table/chart retrieval, and negative no-visual cases. The evaluator reports pass rate, expected-term recall, top-5 relevance, citation accuracy, visual relevance, and answer faithfulness. Failed cases are written to `cleanup_reports/retrieval_benchmark_failures.jsonl` with query rewrites, top retrieved chunks, reranker/BM25/vector scores, selected visuals, and final citations. Use this after uploading approved dental PDFs to compare retrieval changes.
 
 ## API Overview
 

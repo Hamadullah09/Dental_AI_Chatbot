@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
@@ -27,17 +27,29 @@ def ingest_user_document_background(document_id: str) -> None:
             return
 
 
-def _sources_to_json(sources: list) -> str:
-    return json.dumps([source.model_dump() for source in sources])
+def _sources_to_json(sources: list, visuals: list | None = None) -> str:
+    return json.dumps(
+        {
+            "sources": [source.model_dump() for source in sources],
+            "visuals": [visual.model_dump() for visual in (visuals or [])],
+        }
+    )
 
 
 def _message_read(message: Message) -> MessageRead:
-    sources = json.loads(message.sources_json) if message.sources_json else []
+    stored = json.loads(message.sources_json) if message.sources_json else []
+    if isinstance(stored, dict):
+        sources = stored.get("sources") or []
+        visuals = stored.get("visuals") or []
+    else:
+        sources = stored
+        visuals = []
     return MessageRead(
         id=message.id,
         role=message.role.value,
         content=message.content,
         sources=sources,
+        visuals=visuals,
         created_at=message.created_at,
     )
 
@@ -55,11 +67,27 @@ def chat(
     session = db.get(ChatSession, payload.session_id) if payload.session_id else None
     if session and session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    if session and session.archived:
+        session.archived = False
+        db.commit()
+        db.refresh(session)
     if not session:
         session = ChatSession(user_id=current_user.id, title=question[:80])
         db.add(session)
         db.commit()
         db.refresh(session)
+
+    history_messages = (
+        db.query(Message)
+        .filter(Message.session_id == session.id)
+        .order_by(Message.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    conversation_history = [
+        {"role": message.role.value, "content": message.content}
+        for message in reversed(history_messages)
+    ]
 
     document = None
     if payload.document_id:
@@ -71,7 +99,7 @@ def chat(
 
     db.add(Message(session_id=session.id, role=MessageRole.user, content=question))
     service = RAGService()
-    answer, sources = service.answer(
+    rag_result = service.answer(
         question,
         top_k=payload.top_k,
         filters={
@@ -82,13 +110,25 @@ def chat(
             "user_role": current_user.role.value,
             "document_id": document.id if document else None,
             "search_web": payload.search_web,
+            "conversation_history": conversation_history,
         },
     )
+    if hasattr(rag_result, "answer"):
+        answer = rag_result.answer
+        sources = rag_result.sources
+        answer_mode = rag_result.answer_mode
+        visuals = rag_result.visuals or []
+    else:
+        answer, sources = rag_result
+        answer_mode = "rag_grounded" if sources else "general_fallback"
+        visuals = []
+    if answer_mode == "service_unavailable":
+        raise HTTPException(status_code=503, detail="The dental AI model did not respond in time. Please try again.")
     assistant_message = Message(
         session_id=session.id,
         role=MessageRole.assistant,
         content=answer,
-        sources_json=_sources_to_json(sources),
+        sources_json=_sources_to_json(sources, visuals),
     )
     db.add(assistant_message)
     db.commit()
@@ -99,6 +139,8 @@ def chat(
         session_id=session.id,
         message_id=assistant_message.id,
         sources=sources,
+        visuals=visuals,
+        answer_mode=answer_mode,
         disclaimer=get_settings().medical_disclaimer,
     )
 
@@ -154,7 +196,7 @@ def list_sessions(
     sessions = (
         db.query(ChatSession)
         .options(selectinload(ChatSession.messages))
-        .filter(ChatSession.user_id == current_user.id)
+        .filter(ChatSession.user_id == current_user.id, ChatSession.archived.is_(False))
         .order_by(ChatSession.updated_at.desc())
         .all()
     )
@@ -162,12 +204,41 @@ def list_sessions(
         ChatSessionRead(
             id=session.id,
             title=session.title,
+            archived=session.archived,
             created_at=session.created_at,
             updated_at=session.updated_at,
             messages=[_message_read(message) for message in session.messages],
         )
         for session in sessions
     ]
+
+
+@router.post("/chat/sessions/{session_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+def archive_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    session = db.get(ChatSession, session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    session.archived = True
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/chat/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    session = db.get(ChatSession, session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    db.delete(session)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/feedback", response_model=FeedbackRead)

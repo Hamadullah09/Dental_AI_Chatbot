@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
-import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
+import { BookOpen, Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
+import type { DocumentItem } from "@/lib/types";
 
 interface ChatInputProps {
   value: string;
@@ -12,6 +13,8 @@ interface ChatInputProps {
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   attachment: File | null;
   onRemoveAttachment: () => void;
+  activeDocument: DocumentItem | null;
+  onClearActiveDocument: () => void;
   isListening: boolean;
   onToggleVoice: () => void;
   searchWeb: boolean;
@@ -27,6 +30,8 @@ export function ChatInput({
   onFileChange,
   attachment,
   onRemoveAttachment,
+  activeDocument,
+  onClearActiveDocument,
   isListening,
   onToggleVoice,
   searchWeb,
@@ -51,8 +56,25 @@ export function ChatInput({
   };
 
   return (
-    <div className="w-full border-t border-dental-border bg-dental-darkBg/95 px-3 py-3 backdrop-blur md:px-4">
+    <div className="w-full border-t border-dental-border bg-dental-darkBg/95 px-3 py-3 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur md:px-4">
       <form onSubmit={onSubmit} className="relative mx-auto flex w-full max-w-3xl flex-col gap-2">
+        {activeDocument && (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-2xl border border-dental-border bg-dental-card px-3 py-2 text-xs text-dental-textSecondary">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className="h-4 w-4 shrink-0 text-dental-accent" />
+              <span className="shrink-0 font-semibold text-dental-textPrimary">Using PDF:</span>
+              <span className="truncate">{activeDocument.title || activeDocument.original_filename}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClearActiveDocument}
+              className="rounded-full px-2 py-1 font-medium text-dental-accent hover:bg-dental-accent/10"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+
         {/* Attachment Preview Card */}
         {attachment && (
           <div className="flex w-fit max-w-full items-center gap-2.5 rounded-2xl border border-dental-border bg-dental-card p-2 pr-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
@@ -125,6 +147,18 @@ export function ChatInput({
                 <Globe2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Web</span>
               </button>
+
+              <span
+                className={`hidden h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium sm:inline-flex ${
+                  activeDocument
+                    ? "bg-dental-accent/15 text-dental-accent"
+                    : "bg-dental-muted text-dental-textSecondary"
+                }`}
+                title={activeDocument ? "Ask this PDF" : "Use complete dental library"}
+              >
+                <BookOpen className="h-4 w-4" />
+                {activeDocument ? "Ask this PDF" : "Full library"}
+              </span>
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -168,7 +202,7 @@ export function ChatInput({
       </form>
       <div className="text-center mt-2">
         <p className="text-[10px] text-dental-textSecondary">
-          Dental AI can make mistakes. Consult a professional dentist for medical advice.
+          Dental AI is for education and clinical decision support only. It does not replace diagnosis, treatment planning, or emergency care from a licensed dentist.
         </p>
       </div>
     </div>

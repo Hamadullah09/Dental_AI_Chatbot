@@ -36,7 +36,7 @@ export function FeatureModals({
         {/* Close Button */}
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors z-10"
+          className="absolute top-4 right-4 p-1.5 text-dental-textMuted hover:text-dental-textPrimary hover:bg-dental-muted rounded-lg transition-colors z-10"
         >
           <X size={18} />
         </button>
@@ -125,13 +125,13 @@ function LibraryContent() {
 
       {/* Search Input */}
       <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dental-textMuted" />
         <input 
           type="text" 
           placeholder="Search articles..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-dental-darkBg border border-dental-border rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-dental-accent transition-colors"
+          className="w-full bg-dental-input border border-dental-border rounded-lg py-2 pl-9 pr-3 text-sm text-dental-textPrimary placeholder:text-dental-textMuted focus:outline-none focus:border-dental-accent transition-colors"
         />
       </div>
 
@@ -145,14 +145,14 @@ function LibraryContent() {
               className={`w-full text-left p-2.5 rounded-lg text-xs font-semibold transition-colors block truncate ${
                 activeTopic === topic.id
                   ? "bg-dental-accent text-white"
-                  : "text-gray-400 hover:text-white hover:bg-dental-card"
+                  : "text-dental-textSecondary hover:text-dental-textPrimary hover:bg-dental-muted"
               }`}
             >
               <span className="block opacity-65 text-[10px] uppercase font-bold tracking-wider mb-0.5">{topic.category}</span>
               <span className="truncate block">{topic.title}</span>
             </button>
           )) : (
-            <p className="text-xs text-gray-500 italic p-2">No articles found.</p>
+            <p className="text-xs text-dental-textMuted italic p-2">No articles found.</p>
           )}
         </div>
 
@@ -174,7 +174,7 @@ function LibraryContent() {
                   <h4 className="text-[11px] font-semibold text-white/90 uppercase tracking-wide">Key Care Advice:</h4>
                   <ul className="space-y-1.5">
                     {topic.tips.map((tip, index) => (
-                      <li key={index} className="flex gap-2 text-xs text-gray-300 leading-relaxed items-start">
+                      <li key={index} className="flex gap-2 text-xs text-dental-textSecondary leading-relaxed items-start">
                         <Check size={12} className="text-dental-accent mt-0.5 shrink-0" />
                         <span>{tip}</span>
                       </li>
@@ -184,7 +184,7 @@ function LibraryContent() {
               </div>
             );
           })() : (
-            <div className="h-full flex items-center justify-center text-xs text-gray-500 italic">
+            <div className="h-full flex items-center justify-center text-xs text-dental-textMuted italic">
               Select an article to read.
             </div>
           )}
@@ -271,18 +271,18 @@ function AppointmentsContent() {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-dental-accent">Schedule Slot</h3>
           
           <div className="space-y-1">
-            <label className="text-[10px] text-gray-400">Specialist Dentist</label>
-            <div className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs font-semibold text-white">
+            <label className="text-[10px] text-dental-textSecondary">Specialist Dentist</label>
+            <div className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs font-semibold text-dental-textPrimary">
               Dr. Arthur Smith, DDS (Periodontics)
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] text-gray-400">Treatment Concern</label>
+            <label className="text-[10px] text-dental-textSecondary">Treatment Concern</label>
             <select 
               value={selectedTreatment} 
               onChange={(e) => setSelectedTreatment(e.target.value)}
-              className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none focus:border-dental-accent"
+              className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs text-dental-textPrimary placeholder:text-dental-textMuted focus:outline-none focus:border-dental-accent"
             >
               {treatments.map((t) => (
                 <option key={t} value={t}>{t}</option>
@@ -292,23 +292,23 @@ function AppointmentsContent() {
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="text-[10px] text-gray-400">Date</label>
+              <label className="text-[10px] text-dental-textSecondary">Date</label>
               <input 
                 type="date"
                 required
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 min={new Date().toISOString().split("T")[0]}
-                className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none focus:border-dental-accent"
+                className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs text-dental-textPrimary focus:outline-none focus:border-dental-accent"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-gray-400">Time</label>
+              <label className="text-[10px] text-dental-textSecondary">Time</label>
               <select 
                 required
                 value={selectedTime}
                 onChange={(e) => setSelectedTime(e.target.value)}
-                className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none focus:border-dental-accent"
+                className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs text-dental-textPrimary focus:outline-none focus:border-dental-accent"
               >
                 <option value="">Select slot</option>
                 {timeSlots.map((ts) => (
@@ -339,11 +339,11 @@ function AppointmentsContent() {
             {appointments.length ? appointments.map((appt) => (
               <div 
                 key={appt.id}
-                className="p-2.5 bg-dental-darkBg border border-dental-border rounded-xl text-xs space-y-1 flex justify-between items-start"
+                className="p-2.5 bg-dental-elevated border border-dental-border rounded-xl text-xs space-y-1 flex justify-between items-start"
               >
                 <div>
                   <p className="font-semibold text-white">{appt.treatment}</p>
-                  <p className="text-[10px] text-gray-400">{appt.doctor}</p>
+                  <p className="text-[10px] text-dental-textSecondary">{appt.doctor}</p>
                   <div className="flex items-center gap-3 text-[10px] text-dental-accent font-medium mt-1">
                     <span className="flex items-center gap-1"><Calendar size={10} />{appt.date}</span>
                     <span className="flex items-center gap-1"><Clock size={10} />{appt.time}</span>
@@ -357,7 +357,7 @@ function AppointmentsContent() {
                 </button>
               </div>
             )) : (
-              <p className="text-xs text-gray-600 italic mt-6 text-center">No scheduled appointments found.</p>
+              <p className="text-xs text-dental-textMuted italic mt-6 text-center">No scheduled appointments found.</p>
             )}
           </div>
         </div>
@@ -452,7 +452,7 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
 
       <div className="space-y-4">
         {/* Upload Container */}
-        <div className="p-5 border-2 border-dashed border-dental-border hover:border-dental-accent/40 rounded-xl bg-dental-darkBg/60 text-center transition-all cursor-pointer relative">
+        <div className="p-5 border-2 border-dashed border-dental-border hover:border-dental-accent/40 rounded-xl bg-dental-elevated text-center transition-all cursor-pointer relative">
           <input 
             type="file" 
             className="absolute inset-0 opacity-0 cursor-pointer"
@@ -473,7 +473,7 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
             <div className="space-y-1">
               <FileText className="mx-auto text-purple-400 w-8 h-8 mb-1" />
               <p className="text-xs font-semibold text-white">Drag & drop or click to upload</p>
-              <p className="text-[10px] text-gray-500">Supports PDF documents for dental reports, prescriptions, and study references</p>
+              <p className="text-[10px] text-dental-textMuted">Supports PDF documents for dental reports, prescriptions, and study references</p>
             </div>
           )}
         </div>
@@ -485,7 +485,7 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
             {reports.length ? reports.map((report) => (
               <div 
                 key={report.id}
-                className="p-3 bg-dental-darkBg border border-dental-border rounded-xl text-xs flex justify-between items-center"
+                className="p-3 bg-dental-elevated border border-dental-border rounded-xl text-xs flex justify-between items-center"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   {report.type.startsWith("image/") ? (
@@ -495,7 +495,7 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
                   )}
                   <div className="min-w-0">
                     <p className="font-semibold text-white truncate max-w-[240px] md:max-w-[320px]">{report.name}</p>
-                    <p className="text-[10px] text-gray-500">{report.size} · Uploaded: {report.date}</p>
+                    <p className="text-[10px] text-dental-textMuted">{report.size} · Uploaded: {report.date}</p>
                   </div>
                 </div>
                 
@@ -515,7 +515,7 @@ function ReportsContent({ onClose, onSendAttachedMessage }: ReportsContentProps)
                 </div>
               </div>
             )) : (
-              <p className="text-xs text-gray-600 italic text-center mt-6">No patient files uploaded yet.</p>
+              <p className="text-xs text-dental-textMuted italic text-center mt-6">No patient files uploaded yet.</p>
             )}
           </div>
         </div>
@@ -554,7 +554,7 @@ function TipsContent() {
 
       <div className="space-y-2">
         {helpItems.map((item) => (
-          <div key={item.title} className="rounded-2xl border border-white/10 bg-[#202020] p-4">
+          <div key={item.title} className="rounded-2xl border border-dental-border bg-dental-elevated p-4">
             <p className="font-medium">{item.title}</p>
             <p className="mt-1 text-sm leading-6 text-white/60">{item.description}</p>
           </div>
@@ -581,8 +581,8 @@ function SettingsContent({ theme, toggleTheme }: SettingsProps) {
     : user?.email?.slice(0, 2).toUpperCase() || "DA";
 
   return (
-    <div className="grid h-[520px] grid-cols-1 bg-[#1f1f1f] text-white md:grid-cols-[220px_1fr]">
-      <aside className="border-b border-white/10 p-3 md:border-b-0 md:border-r">
+    <div className="grid h-[520px] grid-cols-1 bg-dental-card text-dental-textPrimary md:grid-cols-[220px_1fr]">
+      <aside className="border-b border-dental-border p-3 md:border-b-0 md:border-r">
         <button className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3 py-3 text-left text-sm font-semibold">
           <Settings size={18} />
           General
@@ -618,7 +618,7 @@ function SettingsContent({ theme, toggleTheme }: SettingsProps) {
             <button
               type="button"
               onClick={toggleTheme}
-              className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm hover:bg-white/10"
+              className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl border border-dental-border px-3 py-2 text-sm text-dental-textPrimary hover:bg-dental-muted"
             >
               {theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
               {theme === "dark" ? "Dark" : "Light"}
@@ -707,7 +707,7 @@ function UpgradeContent() {
             className={`p-4 rounded-xl border flex flex-col justify-between relative transition-all ${
               tier.popular 
                 ? "bg-dental-card border-dental-accent/60 shadow-lg shadow-dental-accent/5" 
-                : "bg-dental-darkBg border-dental-border hover:border-dental-border/80"
+                : "bg-dental-elevated border-dental-border hover:border-dental-borderStrong"
             }`}
           >
             {tier.popular && (
@@ -720,14 +720,14 @@ function UpgradeContent() {
               <h3 className="text-xs font-bold text-white">{tier.name}</h3>
               <div className="flex items-baseline gap-0.5">
                 <span className="text-2xl font-bold text-white">{tier.price}</span>
-                {tier.period && <span className="text-[10px] text-gray-500">{tier.period}</span>}
+                {tier.period && <span className="text-[10px] text-dental-textMuted">{tier.period}</span>}
               </div>
               <p className="text-[10px] text-dental-textSecondary leading-normal min-h-[36px]">{tier.description}</p>
               
               <div className="border-t border-dental-border/40 pt-2 my-2">
                 <ul className="space-y-1">
                   {tier.features.map((feat) => (
-                    <li key={feat} className="flex gap-1 text-[9px] text-gray-300 leading-relaxed items-start">
+                    <li key={feat} className="flex gap-1 text-[9px] text-dental-textSecondary leading-relaxed items-start">
                       <Check size={10} className="text-dental-accent mt-0.5 shrink-0" />
                       <span className="truncate">{feat}</span>
                     </li>
@@ -746,7 +746,7 @@ function UpgradeContent() {
                 className={`w-full py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                   tier.popular
                     ? "bg-dental-accent hover:bg-dental-accentHover text-white"
-                    : "bg-dental-border hover:bg-white/5 text-gray-300"
+                    : "bg-dental-muted hover:bg-dental-border text-dental-textPrimary"
                 }`}
               >
                 {tier.price === "$0" ? "Current Tier" : `Choose ${tier.name.split(" ")[1]}`}
@@ -786,11 +786,11 @@ function PersonalizationContent() {
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-[10px] text-gray-400 block">Personal Profile Context</label>
+            <label className="text-[10px] text-dental-textSecondary block">Personal Profile Context</label>
             <select 
               value={dentalRole} 
               onChange={(e) => setDentalRole(e.target.value)}
-              className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none"
+              className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs text-dental-textPrimary focus:outline-none"
             >
               <option value="patient">Standard Patient (Layman definitions)</option>
               <option value="student">Dental Student (Clinical references)</option>
@@ -799,11 +799,11 @@ function PersonalizationContent() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] text-gray-400 block">Specialty Retrieval Priority</label>
+            <label className="text-[10px] text-dental-textSecondary block">Specialty Retrieval Priority</label>
             <select 
               value={specialtyFocus} 
               onChange={(e) => setSpecialtyFocus(e.target.value)}
-              className="w-full bg-dental-darkBg border border-dental-border p-2 rounded-lg text-xs text-white focus:outline-none"
+              className="w-full bg-dental-input border border-dental-border p-2 rounded-lg text-xs text-dental-textPrimary focus:outline-none"
             >
               <option value="general">General Oral Health & Cleanliness</option>
               <option value="surgery">Oral & Maxillofacial Surgery</option>
@@ -814,7 +814,7 @@ function PersonalizationContent() {
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] text-gray-400 block">AI Speech Tone & Response Level</label>
+          <label className="text-[10px] text-dental-textSecondary block">AI Speech Tone & Response Level</label>
           <div className="grid grid-cols-3 gap-2">
             {[
               { id: "calm", label: "Calm & Trustworthy", desc: "Reassuring medical support" },
@@ -828,7 +828,7 @@ function PersonalizationContent() {
                 className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                   aiAssistantTone === tone.id 
                     ? "bg-dental-accent/15 border-dental-accent text-white" 
-                    : "bg-dental-darkBg border-dental-border text-gray-400 hover:text-white"
+                    : "bg-dental-elevated border-dental-border text-dental-textSecondary hover:text-dental-textPrimary"
                 }`}
               >
                 <span className="text-[10px] font-bold block">{tone.label}</span>

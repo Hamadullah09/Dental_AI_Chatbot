@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -42,12 +42,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <main className="flex min-h-screen w-screen flex-col items-center justify-center bg-[#050505] px-4 py-8 text-white selection:bg-dental-accent selection:text-white">
-      <div className="w-full max-w-[430px] rounded-[1.75rem] border border-white/10 bg-[#202020] p-8 shadow-2xl fade-in">
-        
+    <main className="flex min-h-dvh w-screen flex-col items-center justify-center bg-dental-darkBg px-4 py-8 text-dental-textPrimary selection:bg-dental-accent selection:text-white">
+      <div className="w-full max-w-[430px] rounded-[1.75rem] border border-dental-border bg-dental-card p-8 shadow-dental fade-in">
+
         {/* Branding Logo */}
         <div className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#111111]">
+          <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-dental-border bg-dental-elevated shadow-sm">
             <Image src="/chatbot-logo.svg" alt="DentalGPT logo" width={40} height={40} className="h-10 w-10 object-contain" priority />
           </div>
           <div className="mt-5 space-y-2">
@@ -57,7 +57,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             <h1 className="text-2xl font-semibold tracking-tight">
               {mode === "login" ? "Welcome back" : "Create your account"}
             </h1>
-            <p className="mx-auto max-w-[300px] text-sm leading-6 text-white/55">
+            <p className="mx-auto max-w-[300px] text-sm leading-6 text-dental-textSecondary">
               {mode === "login"
                 ? "Sign in to continue your dental AI workspace."
                 : "Create a workspace for grounded dental consultations."}
@@ -71,16 +71,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             {/* Full Name for register */}
             {mode === "register" && (
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-white/55">Full Name</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">Full Name</label>
                 <div className="relative">
-                  <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                  <input 
-                    className="w-full rounded-2xl border border-white/10 bg-[#050505] py-3.5 pl-11 pr-4 text-sm text-white outline-none transition-all placeholder:text-white/35 focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20" 
-                    type="text" 
+                  <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-dental-textMuted" />
+                  <input
+                    className="w-full rounded-2xl border border-dental-border bg-dental-input py-3.5 pl-11 pr-4 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                    type="text"
                     placeholder="Hamadullah"
-                    value={fullName} 
-                    onChange={(event) => setFullName(event.target.value)} 
-                    required 
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -88,16 +88,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
             {/* Email Address */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-white/55">Email Address</label>
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                <input 
-                  className="w-full rounded-2xl border border-white/10 bg-[#050505] py-3.5 pl-11 pr-4 text-sm text-white outline-none transition-all placeholder:text-white/35 focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20" 
-                  type="email" 
+                <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-dental-textMuted" />
+                <input
+                  className="w-full rounded-2xl border border-dental-border bg-dental-input py-3.5 pl-11 pr-4 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                  type="email"
                   placeholder="name@example.com"
-                  value={email} 
-                  onChange={(event) => setEmail(event.target.value)} 
-                  required 
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
                 />
               </div>
             </div>
@@ -105,7 +105,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             {/* Password */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between gap-3">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-white/55">Password</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">Password</label>
                 {mode === "login" && (
                   <button
                     type="button"
@@ -117,20 +117,20 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                 )}
               </div>
               <div className="relative">
-                <KeyRound className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                <input 
-                  className="w-full rounded-2xl border border-white/10 bg-[#050505] py-3.5 pl-11 pr-12 text-sm text-white outline-none transition-all placeholder:text-white/35 focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20" 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="••••••••"
-                  value={password} 
-                  onChange={(event) => setPassword(event.target.value)} 
-                  required 
-                  minLength={8} 
+                <KeyRound className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-dental-textMuted" />
+                <input
+                  className="w-full rounded-2xl border border-dental-border bg-dental-input py-3.5 pl-11 pr-12 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/40"
+                  className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-dental-textMuted transition-colors hover:bg-dental-muted hover:text-dental-textPrimary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/40"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   title={showPassword ? "Hide password" : "Show password"}
                 >
@@ -142,24 +142,27 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             {/* Role Select for Register */}
             {mode === "register" && (
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-white/55">Clinical Workspace Role</label>
-                <select 
-                  className="w-full rounded-2xl border border-white/10 bg-[#050505] px-4 py-3.5 text-sm text-white outline-none transition-colors focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20" 
-                  value={role} 
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">Clinical Workspace Role</label>
+                <select
+                  className="w-full rounded-2xl border border-dental-border bg-dental-input px-4 py-3.5 text-sm text-dental-textPrimary outline-none transition-colors focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                  value={role}
                   onChange={(event) => setRole(event.target.value as UserRole)}
                 >
                   <option value="patient">Patient (Symptom consultation)</option>
                   <option value="student">Dental Student (Educational research)</option>
-                  <option value="dentist">Specialist Dentist (Clinical decision support)</option>
+                  <option value="dentist">Dentist access request (admin verification required)</option>
                 </select>
+                <p className="text-[11px] leading-5 text-dental-textSecondary">
+                  Dentist accounts are enabled only after credential verification by an admin.
+                </p>
               </div>
             )}
           </div>
 
           {/* Submit Button */}
-          <button 
+          <button
             type="submit"
-            className="mt-2 w-full rounded-2xl bg-white py-3.5 text-sm font-bold text-black shadow-lg transition-all duration-150 hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50" 
+            className="mt-2 w-full rounded-2xl bg-dental-accent py-3.5 text-sm font-bold text-white shadow-lg shadow-dental-accent/20 transition-all duration-150 hover:bg-dental-accentHover disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isLoading}
           >
             {isLoading ? "Authenticating..." : mode === "login" ? "Sign In" : "Register"}
@@ -168,10 +171,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
         {/* Footer Navigation */}
         <div className="mt-6 flex flex-col gap-2 text-center">
-          <p className="text-sm text-white/55">
+          <p className="text-sm text-dental-textSecondary">
             {mode === "login" ? "Don't have an account? " : "Already registered? "}
-            <Link 
-              href={mode === "login" ? "/register" : "/login"} 
+            <Link
+              href={mode === "login" ? "/register" : "/login"}
               className="font-semibold text-dental-accent underline transition-colors hover:text-dental-accentHover"
             >
               {mode === "login" ? "Create an account" : "Sign In"}
@@ -181,7 +184,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
         {/* Status Prompt */}
         {status && (
-          <div className="mt-4 flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300 animate-in fade-in">
+          <div className="mt-4 flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-300 animate-in fade-in">
             <AlertCircle size={15} className="mt-0.5 shrink-0" />
             <span>{status}</span>
           </div>

@@ -12,11 +12,11 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
     const stored = localStorage.getItem("dental_ai_theme") as Theme | null;
-    const nextTheme = stored || "dark";
+    const nextTheme = stored || "light";
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
   }, []);

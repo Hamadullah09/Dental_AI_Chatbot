@@ -15,13 +15,24 @@ module.exports = {
         dental: {
           accent: 'var(--dental-accent)',
           accentHover: 'var(--dental-accentHover)',
+          accentSoft: 'var(--dental-accentSoft)',
           darkBg: 'var(--dental-darkBg)',
           sidebar: 'var(--dental-sidebar)',
           card: 'var(--dental-card)',
+          elevated: 'var(--dental-elevated)',
+          input: 'var(--dental-input)',
+          muted: 'var(--dental-muted)',
           border: 'var(--dental-border)',
+          borderStrong: 'var(--dental-borderStrong)',
           textPrimary: 'var(--dental-textPrimary)',
           textSecondary: 'var(--dental-textSecondary)',
+          textMuted: 'var(--dental-textMuted)',
+          userBubble: 'var(--dental-userBubble)',
+          userBubbleText: 'var(--dental-userBubbleText)',
         }
+      },
+      boxShadow: {
+        dental: 'var(--dental-shadow)',
       }
     },
   },

@@ -1,17 +1,20 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth";
-import { BookOpen, Copy, FileText, Globe2, MoreHorizontal, RotateCcw, Share2, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { BookOpen, Copy, FileImage, FileText, Globe2, MoreHorizontal, RotateCcw, Share2, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { sendFeedback } from "@/lib/api";
+import { SafeMarkdown } from "./SafeMarkdown";
 
 interface MessageBubbleProps {
   message: Message;
   onStatus?: (status: string) => void;
+  onRetry?: () => void;
 }
 
-export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
+export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps) {
   const { token } = useAuth();
   const [feedbackGiven, setFeedbackGiven] = useState<"helpful" | "needs-work" | null>(null);
   const [showSources, setShowSources] = useState(false);
@@ -45,49 +48,26 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
   }
 
   function handleRetry() {
-    onStatus?.("Retry from the composer by sending the question again.");
-    setTimeout(() => onStatus?.(""), 3000);
+    if (!onRetry) {
+      onStatus?.("No previous question is available to retry.");
+      setTimeout(() => onStatus?.(""), 3000);
+      return;
+    }
+    onRetry();
   }
 
-  const formatContent = (text: string) => {
-    return text.split("\n").map((line, idx) => {
-      const formattedLine = line;
-
-      // Handle bold syntax: **text**
-      const boldRegex = /\*\*(.*?)\*\*/g;
-      const parts: React.ReactNode[] = [];
-      let lastIndex = 0;
-      let match;
-      
-      while ((match = boldRegex.exec(formattedLine)) !== null) {
-        if (match.index > lastIndex) {
-          parts.push(formattedLine.substring(lastIndex, match.index));
-        }
-        parts.push(<strong key={match.index} className="font-semibold text-dental-textPrimary">{match[1]}</strong>);
-        lastIndex = boldRegex.lastIndex;
-      }
-      if (lastIndex < formattedLine.length) {
-        parts.push(formattedLine.substring(lastIndex));
-      }
-
-      const contentElements = parts.length > 0 ? parts : formattedLine;
-
-      if (line.trim().startsWith("• ") || line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
-        const cleanText = line.trim().substring(2);
-        return (
-          <li key={idx} className="ml-5 list-disc text-[15px] text-dental-textPrimary mt-1.5 leading-7">
-            {parts.length > 0 ? parts : cleanText}
-          </li>
-        );
-      }
-
-      return (
-        <p key={idx} className="text-[15px] text-dental-textPrimary leading-7 mb-3 break-words last:mb-0">
-          {contentElements}
-        </p>
-      );
-    });
-  };
+  function handleReadAloud() {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      onStatus?.("Read aloud is not supported in this browser.");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    utterance.rate = 0.95;
+    window.speechSynthesis.speak(utterance);
+    onStatus?.("Reading response aloud.");
+    setShowMore(false);
+  }
 
   return (
     <article className={`fade-in w-full py-4 ${message.role === "user" ? "flex justify-end" : "flex justify-start"}`}>
@@ -96,17 +76,64 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
         <div className={`flex min-w-0 flex-1 flex-col gap-2 ${isAssistant ? "" : "items-end"}`}>
           <div className={`max-w-full text-sm leading-relaxed ${
             message.role === "user"
-              ? "rounded-[1.65rem] bg-[#2f2f2f] px-5 py-3 text-white shadow-sm"
+              ? "rounded-[1.65rem] bg-dental-userBubble px-5 py-3 text-dental-userBubbleText shadow-sm"
               : "w-full px-1 py-1 text-dental-textPrimary"
           }`}>
           {/* Main Text */}
           {isAssistant ? (
-            <div>{formatContent(message.content)}</div>
+            <div className="break-words">
+              <SafeMarkdown content={message.content} />
+            </div>
           ) : (
             <div className="whitespace-pre-wrap text-[15px] leading-6">{message.content}</div>
           )}
 
           </div>
+
+          {isAssistant && message.visuals && message.visuals.length > 0 && (
+            <div className="mx-1 mt-2 rounded-2xl border border-dental-border bg-dental-card p-3">
+              <p className="mb-3 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-dental-accent">
+                <FileImage size={12} /> Related Visuals
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {message.visuals.map((visual) => (
+                  <a
+                    key={visual.visual_id}
+                    href={visual.image_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group overflow-hidden rounded-xl border border-dental-border bg-dental-elevated transition-colors hover:border-dental-accent/50"
+                  >
+                    <div className="aspect-[4/3] w-full overflow-hidden bg-dental-muted">
+                      <Image
+                        src={visual.image_url}
+                        alt={visual.caption_text || `${visual.visual_type} from ${visual.document_name}`}
+                        width={480}
+                        height={360}
+                        unoptimized
+                        className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="rounded-full bg-dental-accentSoft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-dental-accent">
+                          {visual.visual_type.replace("_", " ")}
+                        </span>
+                        {visual.page_number && <span className="text-[10px] text-dental-textMuted">p.{visual.page_number}</span>}
+                      </div>
+                      <p className="truncate text-xs font-semibold text-dental-textPrimary">{visual.document_name}</p>
+                      {(visual.caption_text || visual.generated_description) && (
+                        <p className="line-clamp-2 text-[11px] leading-5 text-dental-textSecondary">
+                          {visual.caption_text || visual.generated_description}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Timestamp and Feedback bar */}
           <div className={`flex w-full items-center gap-2 px-1 ${isAssistant ? "justify-between" : "justify-end"}`}>
@@ -163,11 +190,11 @@ export function MessageBubble({ message, onStatus }: MessageBubbleProps) {
                   <p className="px-3 py-2 text-xs text-dental-textSecondary">
                     {message.created_at ? new Date(message.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Assistant response"}
                   </p>
-                  <button type="button" onClick={() => setShowMore(false)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
+                  <button type="button" onClick={handleReadAloud} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
                     <Volume2 className="h-4 w-4 text-dental-textSecondary" />
                     Read aloud
                   </button>
-                  <button type="button" onClick={() => setShowMore(false)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
+                  <button type="button" onClick={handleRetry} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
                     <RotateCcw className="h-4 w-4 text-dental-textSecondary" />
                     Try again
                   </button>

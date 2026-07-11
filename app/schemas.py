@@ -44,6 +44,19 @@ class SourceCitation(BaseModel):
     score: float | None = None
 
 
+class VisualCitation(BaseModel):
+    visual_id: str
+    document_id: str | None = None
+    document_name: str
+    page_number: int | None = None
+    visual_type: str = "unknown"
+    image_path: str
+    image_url: str
+    caption_text: str | None = None
+    generated_description: str | None = None
+    score: float | None = None
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     session_id: str | None = None
@@ -61,6 +74,8 @@ class ChatResponse(BaseModel):
     session_id: str
     message_id: str
     sources: list[SourceCitation]
+    visuals: list[VisualCitation] = []
+    answer_mode: str = "rag_grounded"
     disclaimer: str
 
 
@@ -69,12 +84,14 @@ class MessageRead(BaseModel):
     role: str
     content: str
     sources: list[dict[str, Any]] = []
+    visuals: list[dict[str, Any]] = []
     created_at: datetime
 
 
 class ChatSessionRead(BaseModel):
     id: str
     title: str | None
+    archived: bool = False
     created_at: datetime
     updated_at: datetime
     messages: list[MessageRead] = []

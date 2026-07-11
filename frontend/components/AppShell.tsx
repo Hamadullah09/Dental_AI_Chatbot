@@ -1,9 +1,9 @@
 "use client";
 
 import { ReactNode, useState, useEffect, createContext, useContext, useCallback } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { getSessions } from "@/lib/api";
+import { archiveSession, deleteSession, getSessions } from "@/lib/api";
 import type { ChatSession } from "@/lib/types";
 import { Sidebar } from "./Sidebar";
 import { ChatHeader } from "./ChatHeader";
@@ -33,6 +33,7 @@ export function AppShell({ title, subtitle, children }: {
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { token, user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -56,8 +57,8 @@ export function AppShell({ title, subtitle, children }: {
   }, [refreshSessions]);
 
   useEffect(() => {
-    setActiveSessionId(new URLSearchParams(window.location.search).get("session_id"));
-  }, [pathname]);
+    setActiveSessionId(searchParams.get("session_id"));
+  }, [pathname, searchParams]);
 
   const handleOpenModal = (modalName: string) => {
     if (modalName === "admin") {
@@ -77,6 +78,24 @@ export function AppShell({ title, subtitle, children }: {
     router.push("/chat");
   };
 
+  const handleArchiveSession = async (id: string) => {
+    if (!token) return;
+    await archiveSession(id, token);
+    if (activeSessionId === id) {
+      handleNewChat();
+    }
+    await refreshSessions();
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    if (!token) return;
+    await deleteSession(id, token);
+    if (activeSessionId === id) {
+      handleNewChat();
+    }
+    await refreshSessions();
+  };
+
   const handleSendAttachedMessage = (filename: string, content: string) => {
     // Save info to local storage so chat page can capture it on reload
     localStorage.setItem("dental_ai_attached_file", filename);
@@ -92,7 +111,7 @@ export function AppShell({ title, subtitle, children }: {
 
   return (
     <ModalContext.Provider value={{ openModal: handleOpenModal, sessions, refreshSessions }}>
-      <div className="h-screen w-screen overflow-hidden flex bg-dental-darkBg text-dental-textPrimary selection:bg-dental-accent selection:text-white font-sans">
+      <div className="h-dvh w-screen overflow-hidden flex bg-dental-darkBg text-dental-textPrimary selection:bg-dental-accent selection:text-white font-sans">
         
         {/* Sidebar Navigation */}
         <Sidebar 
@@ -105,13 +124,20 @@ export function AppShell({ title, subtitle, children }: {
           onSelectSession={handleSelectSession}
           onNewChat={handleNewChat}
           onOpenModal={handleOpenModal}
+          onArchiveSession={handleArchiveSession}
+          onDeleteSession={handleDeleteSession}
         />
 
         {/* Main Content Area */}
         <div className={`flex-1 flex flex-col h-full min-w-0 overflow-hidden relative transition-[padding-left] duration-300 ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-[18rem]"}`}>
           
           {/* Header Bar */}
-          <ChatHeader onMenuToggle={() => setSidebarOpen(true)} />
+          <ChatHeader
+            activeSessionId={activeSessionId}
+            onMenuToggle={() => setSidebarOpen(true)}
+            onArchiveSession={handleArchiveSession}
+            onDeleteSession={handleDeleteSession}
+          />
 
           {/* Children Viewport */}
           <main className="flex-1 flex flex-col min-h-0 bg-dental-darkBg relative">

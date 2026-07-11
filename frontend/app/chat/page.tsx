@@ -21,7 +21,10 @@ function ChatContent() {
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [status, setStatus] = useState("");
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [documentStatus, setDocumentStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [activeDocument, setActiveDocument] = useState<DocumentItem | null>(null);
@@ -38,6 +41,12 @@ function ChatContent() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    if (!toast || isLoading) return;
+    const timeoutId = window.setTimeout(() => setToast(""), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast, isLoading]);
 
   // Load session from urlSessionId or sessions list
   useEffect(() => {
@@ -75,7 +84,7 @@ function ChatContent() {
     for (let attempt = 0; attempt < 180; attempt += 1) {
       const doc = await getChatDocument(documentId, token);
       setActiveDocument(doc);
-      setStatus(`${doc.ingestion_step || "Processing PDF"} (${doc.ingestion_progress || 0}%)`);
+      setUploadProgress(`${doc.ingestion_step || "Processing PDF"} (${doc.ingestion_progress || 0}%)`);
       if (doc.status === "ready") return doc;
       if (doc.status === "failed") {
         throw new Error(doc.error_message || "Document ingestion failed.");
@@ -85,35 +94,36 @@ function ChatContent() {
     throw new Error("Document is still processing. Please try again shortly.");
   }
 
-  // Handle regular chat form submissions
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-
-    if (!token || (!question.trim() && !attachment)) return;
+  async function submitPrompt(promptText: string, fileToUpload: File | null = null) {
+    if (!token || (!promptText.trim() && !fileToUpload)) return;
     let scopedDocument = activeDocument;
-    const prompt = question.trim() || "Summarize this uploaded dental document and answer using only this document.";
+    const prompt = promptText.trim() || "Summarize this uploaded dental document and answer using only this document.";
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: attachment ? `Attached PDF: ${attachment.name}\n\n${prompt}` : prompt,
+      content: fileToUpload ? `Attached PDF: ${fileToUpload.name}\n\n${prompt}` : prompt,
       sources: [],
+      visuals: [],
       created_at: new Date().toISOString()
     };
 
     setMessages((current) => [...current, userMessage]);
     setQuestion("");
+    setError("");
+    setToast("");
     setIsLoading(true);
 
     try {
-      if (attachment) {
-        setStatus("Uploading PDF for grounded chat...");
-        const uploaded = await uploadChatDocument(attachment, token);
+      if (fileToUpload) {
+        setUploadProgress("Uploading PDF for grounded chat...");
+        const uploaded = await uploadChatDocument(fileToUpload, token);
         setAttachment(null);
         scopedDocument = await waitForDocumentReady(uploaded.id);
+        setUploadProgress("");
       }
 
-      setStatus(scopedDocument ? `Retrieving context from ${scopedDocument.title || scopedDocument.original_filename}...` : "Retrieving dental context...");
+      setDocumentStatus(scopedDocument ? `Using PDF: ${scopedDocument.title || scopedDocument.original_filename}` : "Using complete dental library");
       const response = await sendChat({
         question: prompt,
         session_id: sessionId,
@@ -122,12 +132,14 @@ function ChatContent() {
       }, token);
       
       // If we created a new session, update search params to sync the URL
-      if (!sessionId && response.session_id) {
+      if (!sessionId && response.session_id && response.answer_mode !== "openai_backup") {
         loadedSessionRef.current = response.session_id;
         router.push(`/chat?session_id=${response.session_id}`);
       }
 
-      setSessionId(response.session_id);
+      if (response.answer_mode !== "openai_backup") {
+        setSessionId(response.session_id);
+      }
       setMessages((current) => [
         ...current,
         {
@@ -135,44 +147,30 @@ function ChatContent() {
           role: "assistant",
           content: response.answer,
           sources: response.sources,
+          visuals: response.visuals || [],
           created_at: new Date().toISOString()
         }
       ]);
-      setStatus(response.disclaimer);
-      await refreshSessions();
+      if (response.answer_mode !== "openai_backup") {
+        await refreshSessions();
+      }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Chat request failed");
+      setError(error instanceof Error ? error.message : "Chat request failed");
     } finally {
       setIsLoading(false);
     }
   }
 
+  // Handle regular chat form submissions
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    await submitPrompt(question, attachment);
+  }
+
   // Handle quick action clicks
   const handleQuickAction = async (actionText: string, mockFilename?: string) => {
     if (mockFilename) {
-      setIsLoading(true);
-      setStatus("Analyzing file...");
-      setTimeout(() => {
-        setIsLoading(false);
-        setMessages((current) => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            role: "user",
-            content: `📄 Attached: ${mockFilename}\n\n${actionText}`,
-            sources: [],
-            created_at: new Date().toISOString()
-          },
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: `I have received and evaluated the dental report **${mockFilename}**.\n\nThe document details outline moderate localized gingivitis with bleeding on probing. Enamel surfaces remain intact. \n\nDr. Smith advises rinsing with chlorhexidine mouthwash and scheduling a plaque scaling session. Would you like me to book this slot for you?`,
-            sources: [],
-            created_at: new Date().toISOString()
-          }
-        ]);
-        setStatus("Grounded file analysis provided.");
-      }, 1500);
+      setToast(`Attach ${mockFilename} and send the prompt to analyze it safely.`);
       return;
     }
 
@@ -183,7 +181,7 @@ function ChatContent() {
     if (e.target.files && e.target.files[0]) {
       const nextFile = e.target.files[0];
       if (nextFile.type !== "application/pdf" && !nextFile.name.toLowerCase().endsWith(".pdf")) {
-        setStatus("Please upload a PDF file.");
+        setError("Please upload a PDF file.");
         return;
       }
       setAttachment(nextFile);
@@ -193,7 +191,7 @@ function ChatContent() {
   function toggleVoiceInput() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setStatus("Voice input is not supported in this browser. Try Chrome or Edge.");
+      setToast("Voice input is not supported in this browser. Try Chrome or Edge.");
       return;
     }
     if (isListening && recognitionRef.current) {
@@ -206,7 +204,7 @@ function ChatContent() {
     recognition.continuous = false;
     recognition.onstart = () => {
       setIsListening(true);
-      setStatus("Listening...");
+      setToast("Listening...");
     };
     recognition.onresult = (event: any) => {
       const transcript = Array.from(event.results)
@@ -218,12 +216,12 @@ function ChatContent() {
       }
     };
     recognition.onerror = () => {
-      setStatus("Could not access microphone. Please allow microphone permission.");
+      setError("Could not access microphone. Please allow microphone permission.");
       setIsListening(false);
     };
     recognition.onend = () => {
       setIsListening(false);
-      setStatus("Voice converted to text.");
+      setToast("Voice converted to text.");
     };
     recognitionRef.current = recognition;
     recognition.start();
@@ -238,7 +236,8 @@ function ChatContent() {
         onQuickAction={handleQuickAction}
         onOpenModal={openModal}
         onTriggerFileUpload={() => fileInputRef.current?.click()}
-        onStatus={setStatus}
+        onStatus={setToast}
+        onRetryMessage={(retryQuestion) => submitPrompt(retryQuestion, null)}
         chatWindowRef={chatWindowRef}
         bottomRef={bottomRef}
       />
@@ -253,6 +252,11 @@ function ChatContent() {
         onFileChange={handleFileChange}
         attachment={attachment}
         onRemoveAttachment={() => setAttachment(null)}
+        activeDocument={activeDocument}
+        onClearActiveDocument={() => {
+          setActiveDocument(null);
+          setDocumentStatus("Using complete dental library");
+        }}
         isListening={isListening}
         onToggleVoice={toggleVoiceInput}
         searchWeb={searchWeb}
@@ -277,9 +281,13 @@ function ChatContent() {
       )}
 
       {/* Floating status bar */}
-      {status && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-dental-card/90 border border-dental-border rounded-full text-[10px] text-dental-textSecondary max-w-md text-center shadow-lg pointer-events-none z-20">
-          {status}
+      {(toast || error || uploadProgress || documentStatus) && (
+        <div className={`absolute top-2 left-1/2 -translate-x-1/2 px-4 py-1.5 border rounded-full text-[10px] max-w-md text-center shadow-lg pointer-events-none z-20 ${
+          error
+            ? "border-red-500/30 bg-red-500/10 text-red-500"
+            : "border-dental-border bg-dental-card/90 text-dental-textSecondary"
+        }`}>
+          {error || uploadProgress || toast || documentStatus}
         </div>
       )}
     </section>

@@ -1,5 +1,15 @@
 from tests.conftest import create_admin_user
 from app.models import DocumentStatus
+from io import BytesIO
+from reportlab.pdfgen import canvas
+
+
+def tiny_pdf_bytes() -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer)
+    pdf.drawString(72, 720, "Sample dental upload.")
+    pdf.save()
+    return buffer.getvalue()
 
 
 def test_admin_can_upload_list_and_delete_document(client, monkeypatch):
@@ -29,7 +39,7 @@ def test_admin_can_upload_list_and_delete_document(client, monkeypatch):
             "review_status": "approved",
             "language": "English",
         },
-        files={"file": ("sample.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")},
+        files={"file": ("sample.pdf", tiny_pdf_bytes(), "application/pdf")},
     )
     assert response.status_code == 201, response.text
     document_id = response.json()["id"]
