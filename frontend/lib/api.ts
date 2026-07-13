@@ -8,9 +8,6 @@ type ApiOptions = RequestInit & {
 const CHAT_GENERATION_TIMEOUT_MS = Number(
   process.env.NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS || process.env.NEXT_PUBLIC_CHAT_BACKEND_TIMEOUT_MS || 180000
 );
-const OPENAI_BACKUP_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_OPENAI_BACKUP_TIMEOUT_MS || 30000);
-const BACKUP_OPENAI_ENDPOINT = (process.env.NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT || "/api/openai-fallback").trim();
-const ENABLE_OPENAI_BACKUP = String(process.env.NEXT_PUBLIC_ENABLE_OPENAI_BACKUP || "false").toLowerCase() === "true";
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 function getApiBaseUrl() {
@@ -125,79 +122,18 @@ export function getCurrentUser(token: string) {
   return request<User>("/auth/me", { token });
 }
 
-function shouldUseOpenAiBackup(error: unknown) {
-  return ENABLE_OPENAI_BACKUP && error instanceof ApiError && (error.status === 0 || error.status >= 500);
-}
-
-async function sendOpenAiBackupChat(input: {
-  question: string;
-  session_id?: string | null;
-}) {
-  let timeoutId: number | null = null;
-  const backupRequest = fetch(BACKUP_OPENAI_ENDPOINT || "/api/openai-fallback", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      question: input.question,
-      session_id: input.session_id || null
-    }),
-  });
-  const timeoutRequest = new Promise<Response>((_, reject) => {
-    timeoutId = window.setTimeout(
-      () => reject(new ApiError("OpenAI backup did not respond quickly enough.", 0)),
-      OPENAI_BACKUP_TIMEOUT_MS
-    );
-  });
-
-  let response: Response;
-  try {
-    response = await Promise.race([backupRequest, timeoutRequest]);
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    throw new ApiError(
-      error instanceof Error ? `OpenAI backup failed: ${error.message}` : "OpenAI backup failed.",
-      0
-    );
-  } finally {
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-    }
-  }
-  const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await response.json() : await response.text();
-  if (!response.ok) {
-    throw new ApiError(typeof data === "string" ? data : data?.detail || "OpenAI backup failed", response.status);
-  }
-  return data as ChatResponse;
-}
-
 export async function sendChat(input: {
   question: string;
   session_id?: string | null;
   document_id?: string | null;
   search_web?: boolean;
 }, token: string) {
-  try {
-    return await request<ChatResponse>("/chat", {
-      method: "POST",
-      token,
-      timeoutMs: CHAT_GENERATION_TIMEOUT_MS,
-      body: JSON.stringify(input)
-    });
-  } catch (error) {
-    if (!shouldUseOpenAiBackup(error)) {
-      throw error;
-    }
-    try {
-      return await sendOpenAiBackupChat(input);
-    } catch (backupError) {
-      throw backupError instanceof Error ? backupError : error;
-    }
-  }
+  return request<ChatResponse>("/chat", {
+    method: "POST",
+    token,
+    timeoutMs: CHAT_GENERATION_TIMEOUT_MS,
+    body: JSON.stringify(input)
+  });
 }
 
 export function uploadChatDocument(file: File, token: string) {
