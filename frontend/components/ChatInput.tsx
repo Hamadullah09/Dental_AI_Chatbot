@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
-import { BookOpen, Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
+import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
 import type { DocumentItem } from "@/lib/types";
 
 interface ChatInputProps {
@@ -148,17 +148,6 @@ export function ChatInput({
                 <span className="hidden sm:inline">Web</span>
               </button>
 
-              <span
-                className={`hidden h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium sm:inline-flex ${
-                  activeDocument
-                    ? "bg-dental-accent/15 text-dental-accent"
-                    : "bg-dental-muted text-dental-textSecondary"
-                }`}
-                title={activeDocument ? "Ask this PDF" : "Use complete dental library"}
-              >
-                <BookOpen className="h-4 w-4" />
-                {activeDocument ? "Ask this PDF" : "Full library"}
-              </span>
             </div>
 
             <div className="flex items-center gap-1.5">

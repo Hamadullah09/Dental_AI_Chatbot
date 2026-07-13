@@ -24,7 +24,6 @@ function ChatContent() {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
-  const [documentStatus, setDocumentStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [activeDocument, setActiveDocument] = useState<DocumentItem | null>(null);
@@ -123,7 +122,6 @@ function ChatContent() {
         setUploadProgress("");
       }
 
-      setDocumentStatus(scopedDocument ? `Using PDF: ${scopedDocument.title || scopedDocument.original_filename}` : "Using complete dental library");
       const response = await sendChat({
         question: prompt,
         session_id: sessionId,
@@ -255,7 +253,6 @@ function ChatContent() {
         activeDocument={activeDocument}
         onClearActiveDocument={() => {
           setActiveDocument(null);
-          setDocumentStatus("Using complete dental library");
         }}
         isListening={isListening}
         onToggleVoice={toggleVoiceInput}
@@ -281,13 +278,13 @@ function ChatContent() {
       )}
 
       {/* Floating status bar */}
-      {(toast || error || uploadProgress || documentStatus) && (
+      {(toast || error || uploadProgress) && (
         <div className={`absolute top-2 left-1/2 -translate-x-1/2 px-4 py-1.5 border rounded-full text-[10px] max-w-md text-center shadow-lg pointer-events-none z-20 ${
           error
             ? "border-red-500/30 bg-red-500/10 text-red-500"
             : "border-dental-border bg-dental-card/90 text-dental-textSecondary"
         }`}>
-          {error || uploadProgress || toast || documentStatus}
+          {error || uploadProgress || toast}
         </div>
       )}
     </section>

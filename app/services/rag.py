@@ -740,9 +740,13 @@ class RAGService:
             "(for example: clinical observational evidence, randomized trial evidence, systematic review evidence, "
             "expert opinion, guideline recommendation, table/statistical evidence, or uncertain/limited evidence). "
             "Write a complete final answer with real content. "
-            "Use these headings only when useful: Direct Answer:, Explanation:, Safety Note:. "
-            "Only include Safety Note when the question involves symptoms, diagnosis, medication, or treatment decisions. "
-            "Under Explanation, write 2 to 4 meaningful bullet points when the question needs detail. "
+            "Start with a short 2 to 3 sentence summary. "
+            "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
+            "Use bold text for important dental terms, symptoms, treatments, and warnings. "
+            "Use short paragraphs and bullet points where they improve readability. "
+            "For educational condition questions, include the relevant definition, causes, progression, symptoms, prevention, and when dental care is needed. "
+            "Aim for 250 to 500 words for detailed educational questions, and shorter answers for simple questions. "
+            "Only include safety guidance when it adds practical value for symptoms, diagnosis, medication, or treatment decisions. "
             "Never output placeholders such as [answer], [2-4 bullet points], [safety note], or template instructions."
         )
 
@@ -922,8 +926,6 @@ class RAGService:
         answer = local_answer
         citations = dedupe_citations([chunk.citation for chunk in chunks])
         visuals = [visual.citation for visual in usable_visuals]
-        if not answer.lower().startswith("based on the uploaded dental references"):
-            answer = f"Based on the uploaded dental references...\n\n{answer}"
         if self.settings.enable_self_check or normalize_rag_mode(self.settings.rag_mode) == "self_rag":
             check = self.self_check_answer(question, answer, chunks)
             logger.info("rag.self_check", extra=check)
@@ -1014,8 +1016,11 @@ class RAGService:
             "No relevant uploaded document content was found.\n"
             "Answer using general dental education only.\n\n"
             "Write a complete final answer with real content. "
-            "Use these headings only when useful: Direct Answer:, Explanation:, Safety Note:. "
-            "Under Explanation, write 2 to 4 meaningful bullet points when the question needs detail. "
+            "Start with a short 2 to 3 sentence summary. "
+            "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
+            "Use bold text for important dental terms, symptoms, treatments, and warnings. "
+            "Use short paragraphs and bullet points where they improve readability. "
+            "For educational condition questions, include the relevant definition, causes, progression, symptoms, prevention, and when dental care is needed. "
             "Never output placeholders such as [answer], [2-4 bullet points], [safety note], or template instructions."
         )
         try:
@@ -1210,7 +1215,7 @@ def is_evidence_type_question(question: str) -> bool:
 def generate_evidence_type_answer(chunks: list[RetrievedChunk]) -> str:
     evidence_text = " ".join(chunk.text for chunk in chunks[:2]).lower()
     if not evidence_text.strip():
-        return "Direct Answer: I do not have enough relevant evidence in the uploaded documents."
+        return "I do not have enough relevant evidence in the uploaded documents."
 
     evidence_type = "limited clinical evidence"
     explanation = "The retrieved chunk discusses the strength or uncertainty of evidence rather than giving a direct treatment instruction."
@@ -1240,8 +1245,8 @@ def generate_evidence_type_answer(chunks: list[RetrievedChunk]) -> str:
         explanation = "The chunk explicitly suggests the evidence is not strong or clear enough for a firm conclusion."
 
     return (
-        f"Direct Answer: The chunk contains {evidence_type}.\n\n"
-        f"Explanation: {explanation}"
+        f"## Evidence Type\n\nThe retrieved chunk contains **{evidence_type}**.\n\n"
+        f"## Why this fits\n\n{explanation}"
     )
 
 
@@ -1480,8 +1485,11 @@ def rag_system_prompt(question: str) -> str:
         "Do not use unrelated context, dump raw context, copy raw chunk text, or repeat the user's question. "
         "Do not invent citations. "
         "Do not diagnose, prescribe medicine, or replace a licensed dentist. "
+        "Use natural Markdown headings related to the specific question. "
+        "Start with a concise summary, then explain in clear sections. "
+        "Bold important dental terms, symptoms, treatments, and warnings. "
+        "Do not use rigid labels like Direct Answer for every response. "
         "Only include a safety note for pain, swelling, fever, bleeding, trauma, infection, medication, diagnosis, or treatment decisions. "
-        "Start immediately with Direct Answer:. "
         f"{roman_rule}"
     )
 
@@ -1503,8 +1511,11 @@ def general_fallback_system_prompt(question: str) -> str:
         "Answer using general dental education. "
         "Do not claim the answer is based on uploaded documents. "
         "Do not invent citations, diagnose, prescribe medicine, or replace a licensed dentist. "
+        "Use natural Markdown headings related to the specific question. "
+        "Start with a concise summary, then explain in clear sections. "
+        "Bold important dental terms, symptoms, treatments, and warnings. "
+        "Do not use rigid labels like Direct Answer for every response. "
         "For pain, swelling, fever, bleeding, trauma, infection, medication, diagnosis, or treatment decisions, advise seeing a licensed dentist. "
-        "Start immediately with Direct Answer:. "
         f"{roman_rule}"
     )
 
