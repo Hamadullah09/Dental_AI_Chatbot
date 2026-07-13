@@ -10,6 +10,7 @@ const CHAT_GENERATION_TIMEOUT_MS = Number(
 );
 const OPENAI_BACKUP_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_OPENAI_BACKUP_TIMEOUT_MS || 30000);
 const BACKUP_OPENAI_ENDPOINT = (process.env.NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT || "/api/openai-fallback").trim();
+const ENABLE_OPENAI_BACKUP = String(process.env.NEXT_PUBLIC_ENABLE_OPENAI_BACKUP || "false").toLowerCase() === "true";
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 function getApiBaseUrl() {
@@ -125,7 +126,7 @@ export function getCurrentUser(token: string) {
 }
 
 function shouldUseOpenAiBackup(error: unknown) {
-  return error instanceof ApiError && (error.status === 0 || error.status >= 500);
+  return ENABLE_OPENAI_BACKUP && error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
 
 async function sendOpenAiBackupChat(input: {

@@ -23,9 +23,9 @@ function getOpenAiTimeoutMs() {
 
 function fallbackErrorMessage(error: unknown) {
   if (error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message))) {
-    return "The backup model did not respond in time. Please try again.";
+    return "The backup response did not complete in time. Please try again.";
   }
-  return error instanceof Error ? error.message : "OpenAI backup failed.";
+  return error instanceof Error ? error.message : "Backup response failed.";
 }
 
 function fallbackPrompt(question: string) {
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   const apiKey = getOpenAiKey();
   if (!apiKey) {
-    return NextResponse.json({ detail: "OpenAI backup is not configured." }, { status: 503 });
+    return NextResponse.json({ detail: "Backup response is not configured." }, { status: 503 });
   }
 
   try {
@@ -95,13 +95,13 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     if (!response.ok) {
-      const message = data?.error?.message || "OpenAI backup request failed.";
+      const message = data?.error?.message || "Backup response request failed.";
       return NextResponse.json({ detail: message }, { status: response.status });
     }
 
     const answer = String(data?.choices?.[0]?.message?.content || "").trim();
     if (!answer) {
-      return NextResponse.json({ detail: "OpenAI backup returned an empty answer." }, { status: 502 });
+      return NextResponse.json({ detail: "Backup response returned an empty answer." }, { status: 502 });
     }
     return NextResponse.json({
       answer,
