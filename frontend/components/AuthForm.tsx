@@ -121,7 +121,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                 <input
                   className="w-full rounded-2xl border border-dental-border bg-dental-input py-3.5 pl-11 pr-12 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
                   type={showPassword ? "text" : "password"}
-                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  placeholder="Enter password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
