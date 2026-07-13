@@ -113,7 +113,12 @@ def extract_and_index_document_visuals(
         points.append(qmodels.PointStruct(id=point_id, vector=vector.tolist(), payload=payload))
 
     if points:
-        qdrant.upsert(collection_name=settings.qdrant_collection, points=points)
+        batch_size = max(1, int(getattr(settings, "vector_upsert_batch_size", 128) or 128))
+        for start in range(0, len(points), batch_size):
+            batch = points[start:start + batch_size]
+            qdrant.upsert(collection_name=settings.qdrant_collection, points=batch)
+            if log:
+                log(f"Indexed visual vectors {start + 1}-{start + len(batch)} of {len(points)}.", "info")
     db.flush()
     return len(visuals)
 

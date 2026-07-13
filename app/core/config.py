@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     qdrant_url: str | None = "http://localhost:6333"
     qdrant_local_path: str | None = None
     qdrant_api_key: str | None = None
+    qdrant_timeout_seconds: int = 120
     qdrant_collection: str = "dental_docs"
     embedding_model_name: str = "all-MiniLM-L6-v2"
     retrieval_top_k: int = 5
@@ -69,6 +70,7 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploaded_docs")
     extracted_visuals_dir: Path = Path("uploads/extracted_visuals")
     max_upload_mb: int = 200
+    ingestion_timeout_seconds: int = 7200
     chunk_size: int = 1000
     chunk_overlap: int = 180
     embedding_batch_size: int = 64

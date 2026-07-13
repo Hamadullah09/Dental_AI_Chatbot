@@ -234,6 +234,13 @@ class IngestionService:
                     time.sleep(0.5 * (attempt + 1))
 
     def ingest_document(self, db: Session, document: Document) -> int:
+        started_monotonic = time.monotonic()
+
+        def check_timeout(stage: str) -> None:
+            timeout_seconds = int(getattr(self.settings, "ingestion_timeout_seconds", 0) or 0)
+            if timeout_seconds > 0 and time.monotonic() - started_monotonic > timeout_seconds:
+                raise TimeoutError(f"Ingestion timed out during {stage} after {timeout_seconds} seconds.")
+
         document.status = DocumentStatus.processing
         document.error_message = None
         document.ingestion_progress = 0
@@ -254,6 +261,7 @@ class IngestionService:
                 parse_log_buffer.append((message, level))
 
             parsed = self.parse_pdf(Path(document.storage_path), log=log_parse_event)
+            check_timeout("PDF parsing")
             chunks = filter_quality_chunks(dedupe_parsed_chunks(parsed.chunks))
             chunks = remove_existing_duplicate_chunks(db, chunks, document.id)
             document.ocr_used = parsed.ocr_used
@@ -297,6 +305,7 @@ class IngestionService:
 
             self.set_progress(db, document, 60, "Creating embeddings", log_message=f"Creating embeddings for {len(chunks)} chunks.")
             vectors = self.encode_chunks(chunks)
+            check_timeout("embedding generation")
             points: list[qmodels.PointStruct] = []
             db_chunks: list[DocumentChunk] = []
 
@@ -386,6 +395,7 @@ class IngestionService:
 
             self.set_progress(db, document, 88, "Writing vector index", log_message=f"Writing {len(points)} chunks to the vector store.")
             self.upsert_points_in_batches(points, log=log_parse_event)
+            check_timeout("text vector upsert")
             db.bulk_save_objects(db_chunks)
             commit_with_retry(db)
             visual_count = 0
@@ -405,6 +415,16 @@ class IngestionService:
                     log=lambda message, level="info": db.add(
                         DocumentIngestionLog(document_id=document.id, level=level, message=message)
                     ),
+                )
+                check_timeout("visual extraction")
+                commit_with_retry(db)
+            else:
+                db.add(
+                    DocumentIngestionLog(
+                        document_id=document.id,
+                        level="info",
+                        message="Multimodal RAG is disabled; skipped visual extraction.",
+                    )
                 )
                 commit_with_retry(db)
             document.status = DocumentStatus.ready
