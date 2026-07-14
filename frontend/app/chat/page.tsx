@@ -130,14 +130,12 @@ function ChatContent() {
       }, token);
       
       // If we created a new session, update search params to sync the URL
-      if (!sessionId && response.session_id && response.answer_mode !== "openai_backup") {
+      if (!sessionId && response.session_id) {
         loadedSessionRef.current = response.session_id;
         router.push(`/chat?session_id=${response.session_id}`);
       }
 
-      if (response.answer_mode !== "openai_backup") {
-        setSessionId(response.session_id);
-      }
+      setSessionId(response.session_id);
       setMessages((current) => [
         ...current,
         {
@@ -149,9 +147,7 @@ function ChatContent() {
           created_at: new Date().toISOString()
         }
       ]);
-      if (response.answer_mode !== "openai_backup") {
-        await refreshSessions();
-      }
+      await refreshSessions();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Chat request failed");
     } finally {

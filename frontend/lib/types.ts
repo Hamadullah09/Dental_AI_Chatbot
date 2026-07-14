@@ -43,7 +43,7 @@ export type ChatResponse = {
   message_id: string;
   sources: SourceCitation[];
   visuals: VisualCitation[];
-  answer_mode: "rag_grounded" | "general_fallback" | "insufficient_evidence" | "web_augmented" | "conversational" | "openai_backup" | string;
+  answer_mode: "rag_grounded" | "general_fallback" | "insufficient_evidence" | "web_augmented" | "conversational" | string;
   disclaimer: string;
 };
 
