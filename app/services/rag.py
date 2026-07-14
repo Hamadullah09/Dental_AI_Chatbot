@@ -746,11 +746,13 @@ class RAGService:
             "expert opinion, guideline recommendation, table/statistical evidence, or uncertain/limited evidence). "
             "Write a complete final answer with real content. "
             "Start with a short, direct answer in 1 to 3 sentences. "
-            "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
+            "Use meaningful Markdown headings that match the question instead of rigid labels. "
+            "Never write the labels 'Direct Answer', 'Explanation', or 'Safety Note'. "
             "Use bold text for important dental terms, symptoms, treatments, and warnings. "
             "Use short paragraphs and bullet points where they improve readability. "
-            "For educational condition questions, include the relevant definition, causes, progression, symptoms, prevention, and when dental care is needed. "
-            "Aim for 250 to 500 words for detailed educational questions, and shorter answers for simple questions. "
+            "For educational condition questions, include the relevant definition, causes, mechanism/progression, symptoms, prevention, and when dental care is needed. "
+            "For causes questions, explain the common causes, why they happen, warning signs, and practical next steps. "
+            "Aim for 300 to 600 words for detailed educational questions, and shorter answers for simple greetings or narrow questions. "
             "Only include safety guidance when it adds practical value for symptoms, diagnosis, medication, or treatment decisions. "
             "Never output placeholders such as [answer], [2-4 bullet points], [safety note], or template instructions."
         )
@@ -780,15 +782,15 @@ class RAGService:
                 top_p=0.8,
                 system_prompt=rag_system_prompt(question, user_role=user_role),
             )
-            return self.ensure_language_style(question, answer)
+            return self.ensure_language_style(question, answer, user_role=user_role)
         except LLMGenerationError:
             logger.exception("rag.text_model.failed")
             return service_unavailable_answer(question)
 
-    def ensure_language_style(self, question: str, answer: str) -> str:
+    def ensure_language_style(self, question: str, answer: str, user_role: str | None = None) -> str:
         cleaned = strip_model_sources(answer)
         if not wants_roman_urdu(question) or not self.llm.is_configured:
-            return repair_patient_facing_answer(question, cleaned)
+            return polish_chat_answer(question, repair_patient_facing_answer(question, cleaned), user_role=user_role)
         prompt = (
             "Rewrite the following answer into Roman Urdu only.\n\n"
             "Rules:\n"
@@ -814,9 +816,9 @@ class RAGService:
                     ),
                 )
             )
-            return repair_patient_facing_answer(question, rewritten)
+            return polish_chat_answer(question, repair_patient_facing_answer(question, rewritten), user_role=user_role)
         except LLMGenerationError:
-            return repair_patient_facing_answer(question, cleaned)
+            return polish_chat_answer(question, repair_patient_facing_answer(question, cleaned), user_role=user_role)
 
     def generate_hybrid_answer(
         self,
@@ -864,7 +866,7 @@ class RAGService:
                 temperature=0.2,
                 system_prompt=rag_system_prompt(question, user_role=user_role),
             )
-            return self.ensure_language_style(question, answer)
+            return self.ensure_language_style(question, answer, user_role=user_role)
         except LLMGenerationError:
             return web_results_fallback_answer(web_results)
 
@@ -1026,10 +1028,13 @@ class RAGService:
             "Answer using reliable general dental education. Do not mention retrieval, database, chunks, fallback, or uploaded documents.\n\n"
             "Write a complete final answer with real content. "
             "Start with a short, direct answer in 1 to 3 sentences. "
-            "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
+            "Use meaningful Markdown headings that match the question instead of rigid labels. "
+            "Never write the labels 'Direct Answer', 'Explanation', or 'Safety Note'. "
             "Use bold text for important dental terms, symptoms, treatments, and warnings. "
             "Use short paragraphs and bullet points where they improve readability. "
-            "For educational condition questions, include the relevant definition, causes, progression, symptoms, prevention, and when dental care is needed. "
+            "For educational condition questions, include the relevant definition, causes, mechanism/progression, symptoms, prevention, and when dental care is needed. "
+            "For causes questions, explain the common causes, why they happen, warning signs, and practical next steps. "
+            "Aim for 300 to 600 words for detailed educational questions, and shorter answers for simple greetings or narrow questions. "
             "Never output placeholders such as [answer], [2-4 bullet points], [safety note], or template instructions."
         )
         try:
@@ -1039,7 +1044,7 @@ class RAGService:
                 top_p=0.8,
                 system_prompt=general_fallback_system_prompt(question, user_role=user_role),
             )
-            return self.ensure_language_style(question, answer)
+            return self.ensure_language_style(question, answer, user_role=user_role)
         except LLMGenerationError:
             logger.exception("rag.general_fallback_model.failed")
             return service_unavailable_answer(question)
@@ -1301,6 +1306,29 @@ def repair_patient_facing_answer(question: str, answer: str) -> str:
     return "I do not have enough relevant evidence in the uploaded documents."
 
 
+def polish_chat_answer(question: str, answer: str, user_role: str | None = None) -> str:
+    if not answer.strip():
+        return answer
+
+    role = normalize_user_role(user_role)
+    safety_heading = {
+        "dentist": "Clinical caution",
+        "dental_student": "Clinical relevance",
+        "patient": "When to get checked",
+    }.get(role, "When to get checked")
+
+    cleaned = answer.strip()
+    cleaned = re.sub(r"(?im)^\s*(?:#+\s*)?Direct\s+Answer\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"(?im)^\s*(?:#+\s*)?Explanation\s*:\s*", "## Key points\n\n", cleaned)
+    cleaned = re.sub(r"(?im)^\s*(?:#+\s*)?Safety\s+Note\s*:\s*", f"## {safety_heading}\n\n", cleaned)
+    cleaned = re.sub(r"(?im)^\s*(?:#+\s*)?Direct\s+answer\s*$\n?", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    if cleaned.startswith("- "):
+        cleaned = f"## Key points\n\n{cleaned}"
+    return cleaned
+
+
 def is_leaked_or_template_answer(answer: str) -> bool:
     normalized = answer.lower()
     bad_patterns = [
@@ -1549,8 +1577,8 @@ def rag_system_prompt(question: str, user_role: str | None = None) -> str:
         "Use natural Markdown headings related to the specific question. "
         "Start with a concise summary, then explain in clear sections. "
         "Bold important dental terms, symptoms, treatments, and warnings. "
-        "Do not use rigid labels like Direct Answer for every response. "
-        "Only include a safety note for pain, swelling, fever, bleeding, trauma, infection, medication, diagnosis, or treatment decisions. "
+        "Never use the section labels 'Direct Answer', 'Explanation', or 'Safety Note'. "
+        "Use a natural final paragraph such as 'When to get checked' only when symptoms, diagnosis, medication, or treatment decisions are involved. "
         f"{roman_rule}"
     )
 
@@ -1576,8 +1604,8 @@ def general_fallback_system_prompt(question: str, user_role: str | None = None) 
         "Use natural Markdown headings related to the specific question. "
         "Start with a concise summary, then explain in clear sections. "
         "Bold important dental terms, symptoms, treatments, and warnings. "
-        "Do not use rigid labels like Direct Answer for every response. "
-        "For pain, swelling, fever, bleeding, trauma, infection, medication, diagnosis, or treatment decisions, advise seeing a licensed dentist. "
+        "Never use the section labels 'Direct Answer', 'Explanation', or 'Safety Note'. "
+        "Use a natural final paragraph such as 'When to get checked' only when symptoms, diagnosis, medication, or treatment decisions are involved. "
         f"{roman_rule}"
     )
 
