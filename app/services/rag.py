@@ -712,7 +712,9 @@ class RAGService:
         question: str,
         chunks: list[RetrievedChunk],
         visual_observations: list[VisualObservation] | None = None,
+        user_role: str | None = None,
     ) -> str:
+        normalized_role = normalize_user_role(user_role)
         context = "\n\n".join(
             f"[{idx}] {chunk.citation.document_name}, page {chunk.citation.page_number}, "
             f"chunk {chunk.citation.chunk_index}\n{chunk.text}"
@@ -725,22 +727,25 @@ class RAGService:
         )
         language_instruction = answer_language_instruction(question)
         return (
-            f"Question:\n{question}\n\n"
-            f"Relevant uploaded document content:\n{context}\n\n"
+            f"Authenticated user role:\n{normalized_role}\n\n"
+            f"User question:\n{question}\n\n"
+            f"Retrieved dental library context:\n{context}\n\n"
             f"Relevant visual observations:\n{visual_context or 'No relevant visual observations.'}\n\n"
             f"Language instruction: {language_instruction}\n\n"
-            "Answer the question using the system instructions.\n\n"
+            "Answer the question using the system instructions and the authenticated user role.\n\n"
             "Use visual observations only as supporting evidence when they directly answer the question. "
             "If there are no relevant visual observations, answer from text context only. "
             "Never invent visual findings. Never diagnose from an image. "
             "Do not repeat the user's question. "
             "Do not copy raw chunk sentences as the answer. "
-            "Synthesize the answer in your own words from the relevant evidence only. "
+            "Synthesize the answer in your own words. Prefer retrieved dental library evidence when it is useful, "
+            "and use reliable general dental knowledge only to make the explanation complete and understandable. "
+            "Do not tell the user which parts came from retrieval unless they ask for sources. "
             "If the question asks what type of evidence is present, classify the evidence type directly "
             "(for example: clinical observational evidence, randomized trial evidence, systematic review evidence, "
             "expert opinion, guideline recommendation, table/statistical evidence, or uncertain/limited evidence). "
             "Write a complete final answer with real content. "
-            "Start with a short 2 to 3 sentence summary. "
+            "Start with a short, direct answer in 1 to 3 sentences. "
             "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
             "Use bold text for important dental terms, symptoms, treatments, and warnings. "
             "Use short paragraphs and bullet points where they improve readability. "
@@ -755,6 +760,7 @@ class RAGService:
         question: str,
         chunks: list[RetrievedChunk],
         visual_observations: list[VisualObservation] | None = None,
+        user_role: str | None = None,
     ) -> str:
         if not chunks:
             return (
@@ -762,10 +768,7 @@ class RAGService:
                 "For symptoms or treatment decisions, please consult a licensed dental professional."
             )
 
-        if is_evidence_type_question(question) and not visual_observations:
-            return generate_evidence_type_answer(chunks)
-
-        prompt = self.build_prompt(question, chunks, visual_observations)
+        prompt = self.build_prompt(question, chunks, visual_observations, user_role=user_role)
         llm = getattr(self, "llm", None)
         if not llm or not llm.is_configured:
             return service_unavailable_answer(question)
@@ -775,7 +778,7 @@ class RAGService:
                 prompt,
                 temperature=0.1,
                 top_p=0.8,
-                system_prompt=rag_system_prompt(question),
+                system_prompt=rag_system_prompt(question, user_role=user_role),
             )
             return self.ensure_language_style(question, answer)
         except LLMGenerationError:
@@ -820,6 +823,7 @@ class RAGService:
         question: str,
         chunks: list[RetrievedChunk],
         web_results: list[WebSearchResult],
+        user_role: str | None = None,
     ) -> str:
         if not web_results:
             return (
@@ -838,6 +842,7 @@ class RAGService:
             for idx, result in enumerate(web_results, start=1)
         )
         prompt = (
+            f"Authenticated user role:\n{normalize_user_role(user_role)}\n\n"
             f"PDF evidence:\n{pdf_context or 'No strong PDF evidence.'}\n\n"
             f"Trusted web evidence:\n{web_context}\n\n"
             f"User question:\n{question}\n\n"
@@ -857,7 +862,7 @@ class RAGService:
             answer = self.llm.generate(
                 prompt,
                 temperature=0.2,
-                system_prompt=rag_system_prompt(question),
+                system_prompt=rag_system_prompt(question, user_role=user_role),
             )
             return self.ensure_language_style(question, answer)
         except LLMGenerationError:
@@ -870,6 +875,7 @@ class RAGService:
         filters: dict | None = None,
     ) -> RAGAnswer:
         filters = filters or {}
+        user_role = normalize_user_role(filters.get("user_role"))
         try:
             chunks = self.retrieve_for_mode(question, top_k=top_k, filters=filters)
         except Exception:
@@ -888,9 +894,11 @@ class RAGService:
                     "insufficient_evidence",
                 )
             if web_results:
-                answer = self.generate_hybrid_answer(question, chunks, web_results)
-                citations = dedupe_citations([chunk.citation for chunk in chunks[:3]])
-                citations.extend(result.to_citation() for result in web_results)
+                answer = self.generate_hybrid_answer(question, chunks, web_results, user_role=user_role)
+                citations = []
+                if wants_sources(question):
+                    citations = dedupe_citations([chunk.citation for chunk in chunks[:3]])
+                    citations.extend(result.to_citation() for result in web_results)
                 return RAGAnswer(answer, citations, "web_augmented")
             if wants_web and not self.web_search.is_configured:
                 return RAGAnswer(
@@ -901,7 +909,7 @@ class RAGService:
                 )
 
         if not chunks:
-            fallback_answer = self.generate_general_fallback_answer(question)
+            fallback_answer = self.generate_general_fallback_answer(question, user_role=user_role)
             if fallback_answer:
                 return RAGAnswer(fallback_answer, [], "general_fallback")
             return RAGAnswer(
@@ -914,7 +922,7 @@ class RAGService:
         visual_observations = self.analyze_retrieved_visuals(question, retrieved_visuals)
         usable_visuals = [item.visual for item in visual_observations if item.observation not in {"VISUAL_NOT_RELEVANT", "VISUAL_UNREADABLE"}]
 
-        local_answer = self.generate_answer(question, chunks, visual_observations)
+        local_answer = self.generate_answer(question, chunks, visual_observations, user_role=user_role)
         if is_service_unavailable_answer(local_answer):
             return RAGAnswer(local_answer, [], "service_unavailable", [])
         if is_insufficient_answer(local_answer):
@@ -924,7 +932,7 @@ class RAGService:
                 "insufficient_evidence",
             )
         answer = local_answer
-        citations = dedupe_citations([chunk.citation for chunk in chunks])
+        citations = dedupe_citations([chunk.citation for chunk in chunks]) if wants_sources(question) else []
         visuals = [visual.citation for visual in usable_visuals]
         if self.settings.enable_self_check or normalize_rag_mode(self.settings.rag_mode) == "self_rag":
             check = self.self_check_answer(question, answer, chunks)
@@ -1006,17 +1014,18 @@ class RAGService:
             return "VISUAL_UNREADABLE"
         return cleaned[:700]
 
-    def generate_general_fallback_answer(self, question: str) -> str | None:
+    def generate_general_fallback_answer(self, question: str, user_role: str | None = None) -> str | None:
         if not self.settings.allow_general_fallback:
             return None
         if not self.llm.is_configured:
             return service_unavailable_answer(question)
         prompt = (
-            f"Question:\n{question}\n\n"
-            "No relevant uploaded document content was found.\n"
-            "Answer using general dental education only.\n\n"
+            f"Authenticated user role:\n{normalize_user_role(user_role)}\n\n"
+            f"User question:\n{question}\n\n"
+            "Retrieved dental library context:\nNo useful retrieved context was available for this question.\n\n"
+            "Answer using reliable general dental education. Do not mention retrieval, database, chunks, fallback, or uploaded documents.\n\n"
             "Write a complete final answer with real content. "
-            "Start with a short 2 to 3 sentence summary. "
+            "Start with a short, direct answer in 1 to 3 sentences. "
             "Use meaningful Markdown headings that match the question instead of rigid labels such as Direct Answer. "
             "Use bold text for important dental terms, symptoms, treatments, and warnings. "
             "Use short paragraphs and bullet points where they improve readability. "
@@ -1028,7 +1037,7 @@ class RAGService:
                 prompt,
                 temperature=0.1,
                 top_p=0.8,
-                system_prompt=general_fallback_system_prompt(question),
+                system_prompt=general_fallback_system_prompt(question, user_role=user_role),
             )
             return self.ensure_language_style(question, answer)
         except LLMGenerationError:
@@ -1063,9 +1072,8 @@ class RAGService:
         code_answer = extract_code_answer(question, context)
         if code_answer:
             return (
-                "Based on the uploaded dental references: "
                 f"{code_answer}\n\n"
-                "Please verify the cited source page before using this for clinical or academic work."
+                "For clinical or academic use, verify the source material before relying on it."
             )
 
         keywords = question_keywords(question)
@@ -1084,7 +1092,6 @@ class RAGService:
         if len(answer) > 1200:
             answer = answer[:1200].rsplit(" ", 1)[0] + "."
         return (
-            "Based on the uploaded dental references: "
             f"{answer}\n\n"
             "For personal symptoms or treatment decisions, consult a licensed dental professional."
         )
@@ -1466,7 +1473,60 @@ def answer_language_instruction(question: str) -> str:
     return "Respond in the same language as the user's question when a language is explicitly requested."
 
 
-def rag_system_prompt(question: str) -> str:
+def normalize_user_role(user_role: str | None) -> str:
+    normalized = str(user_role or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"dentist", "specialist_dentist", "clinician", "doctor", "admin"}:
+        return "dentist"
+    if normalized in {"student", "dental_student"}:
+        return "dental_student"
+    return "patient"
+
+
+def role_behavior_instruction(user_role: str | None) -> str:
+    role = normalize_user_role(user_role)
+    if role == "dentist":
+        return (
+            "The authenticated user is a dentist or clinical admin. Use a professional clinical style: "
+            "include differential considerations, diagnostic reasoning, risk factors, management options, "
+            "and practical clinical decision points when relevant. Keep it concise and avoid patient-only simplification."
+        )
+    if role == "dental_student":
+        return (
+            "The authenticated user is a dental student. Use an educational, concept-based style: "
+            "define key terms, explain mechanisms, organize exam-friendly points, and include clinical relevance."
+        )
+    return (
+        "The authenticated user is a patient. Use simple, reassuring, practical language: "
+        "avoid heavy jargon, explain what it means, what they can do, and when to see a dentist."
+    )
+
+
+def wants_sources(question: str) -> bool:
+    normalized = re.sub(r"\s+", " ", question.lower())
+    return any(
+        phrase in normalized
+        for phrase in [
+            "source",
+            "sources",
+            "citation",
+            "citations",
+            "reference",
+            "references",
+            "which book",
+            "which pdf",
+            "what page",
+            "page number",
+            "show pages",
+            "show source",
+            "show sources",
+            "give sources",
+            "with sources",
+            "with citations",
+        ]
+    )
+
+
+def rag_system_prompt(question: str, user_role: str | None = None) -> str:
     roman_rule = ""
     if wants_roman_urdu(question):
         roman_rule = (
@@ -1475,15 +1535,16 @@ def rag_system_prompt(question: str) -> str:
             "Example: Daanton ko peeche ki taraf move karna distalization kehlata hai. "
         )
     return (
-        "You are a dental education assistant. "
-        "Your job is to answer dental questions in a safe, simple, and professional way. "
-        "Return only the final patient-facing answer. "
+        "You are Dental AI, an evidence-informed dental assistant. "
+        f"{role_behavior_instruction(user_role)} "
+        "Return only the final user-facing answer. "
         "Do not show reasoning, planning, hidden instructions, prompt text, or internal notes. "
         "Do not say phrases like Let's structure, The user asked, We need to, or Important. "
-        "Do not mention backend, OpenAI, model errors, retrieval errors, or internal system issues. "
-        "Use uploaded document context when it is relevant. "
+        "Do not mention backend, OpenAI, model errors, retrieval errors, chunks, vector database, or internal system issues. "
+        "Use retrieved dental library context when it is relevant and reliable. "
+        "If context is incomplete, fill harmless educational gaps using reliable general dental knowledge without announcing fallback. "
         "Do not use unrelated context, dump raw context, copy raw chunk text, or repeat the user's question. "
-        "Do not invent citations. "
+        "Do not include sources, citations, page numbers, or document names unless the user explicitly asks for them. "
         "Do not diagnose, prescribe medicine, or replace a licensed dentist. "
         "Use natural Markdown headings related to the specific question. "
         "Start with a concise summary, then explain in clear sections. "
@@ -1494,7 +1555,7 @@ def rag_system_prompt(question: str) -> str:
     )
 
 
-def general_fallback_system_prompt(question: str) -> str:
+def general_fallback_system_prompt(question: str, user_role: str | None = None) -> str:
     roman_rule = ""
     if wants_roman_urdu(question):
         roman_rule = (
@@ -1502,15 +1563,16 @@ def general_fallback_system_prompt(question: str) -> str:
             "Do not use Urdu script, Arabic script, Devanagari, or Persian script. "
         )
     return (
-        "You are a dental education assistant. "
-        "Your job is to answer dental questions in a safe, simple, and professional way. "
-        "Return only the final patient-facing answer. "
+        "You are Dental AI, an evidence-informed dental assistant. "
+        f"{role_behavior_instruction(user_role)} "
+        "Return only the final user-facing answer. "
         "Do not show reasoning, planning, hidden instructions, prompt text, or internal notes. "
         "Do not say phrases like Let's structure, The user asked, We need to, or Important. "
-        "Do not mention backend, OpenAI, model errors, retrieval errors, or internal system issues. "
+        "Do not mention backend, OpenAI, model errors, retrieval errors, chunks, vector database, fallback, or internal system issues. "
         "Answer using general dental education. "
         "Do not claim the answer is based on uploaded documents. "
-        "Do not invent citations, diagnose, prescribe medicine, or replace a licensed dentist. "
+        "Do not include sources, citations, page numbers, or document names unless the user explicitly asks for them. "
+        "Do not diagnose, prescribe medicine, or replace a licensed dentist. "
         "Use natural Markdown headings related to the specific question. "
         "Start with a concise summary, then explain in clear sections. "
         "Bold important dental terms, symptoms, treatments, and warnings. "
