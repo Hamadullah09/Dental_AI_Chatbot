@@ -98,7 +98,7 @@ class OllamaProvider(LLMProvider):
         import httpx
         try:
             with httpx.Client(timeout=self.settings.ollama_health_check_timeout) as client:
-                response = client.get(f"{self.settings.ollama_base_url}/api/tags")
+                response = client.get(f"{self.settings.ollama_base_url}/api/version")
                 return response.is_success
         except Exception:
             return False

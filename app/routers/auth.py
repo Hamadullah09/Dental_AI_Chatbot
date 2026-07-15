@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import (
     create_access_token,
@@ -35,6 +36,18 @@ def _log_audit(db: Session, user_id: str | None, action: str, resource_type: str
     db.add(log)
 
 
+def _create_refresh_token_with_expiry(db: Session, user: User) -> str:
+    settings = get_settings()
+    refresh_token = create_refresh_token(user.id)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(refresh_token),
+        expires_at=expires_at,
+    ))
+    return refresh_token
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, request: Request, db: Session = Depends(get_db)) -> Token:
     if rate_limiter.is_rate_limited(f"register:{request.client.host}", 5, 300):
@@ -63,14 +76,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
     db.flush()
 
     access_token = create_access_token(user.id, {"role": user.role.value})
-    refresh_token = create_refresh_token(user.id)
-    db.add(RefreshToken(
-        user_id=user.id,
-        token_hash=hash_token(refresh_token),
-        expires_at=datetime.now(timezone.utc).replace(
-            hour=23, minute=59, second=59
-        ),
-    ))
+    refresh_token = _create_refresh_token_with_expiry(db, user)
 
     _log_audit(db, user.id, "register", "user", request, f"Role: {role.value}")
     db.commit()
@@ -95,14 +101,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     access_token = create_access_token(user.id, {"role": user.role.value})
-    refresh_token = create_refresh_token(user.id)
-    db.add(RefreshToken(
-        user_id=user.id,
-        token_hash=hash_token(refresh_token),
-        expires_at=datetime.now(timezone.utc).replace(
-            hour=23, minute=59, second=59
-        ),
-    ))
+    refresh_token = _create_refresh_token_with_expiry(db, user)
 
     _log_audit(db, user.id, "login", "user", request)
     db.commit()
@@ -145,14 +144,7 @@ def refresh_token(payload: TokenRefreshRequest, request: Request, db: Session = 
     stored_token.revoked_at = datetime.now(timezone.utc)
 
     new_access = create_access_token(user.id, {"role": user.role.value})
-    new_refresh = create_refresh_token(user.id)
-    db.add(RefreshToken(
-        user_id=user.id,
-        token_hash=hash_token(new_refresh),
-        expires_at=datetime.now(timezone.utc).replace(
-            hour=23, minute=59, second=59
-        ),
-    ))
+    new_refresh = _create_refresh_token_with_expiry(db, user)
 
     _log_audit(db, user.id, "token_refresh", "user", request)
     db.commit()

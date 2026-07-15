@@ -57,7 +57,18 @@ class VisualPipeline:
             if self.settings.tesseract_cmd:
                 pytesseract.pytesseract.tesseract_cmd = self.settings.tesseract_cmd
 
-            image = Image.open(image_path)
+            if image_path.lower().endswith('.pdf'):
+                try:
+                    from pdf2image import convert_from_path
+                    images = convert_from_path(image_path, first_page=1, last_page=1, dpi=300)
+                    if images:
+                        image = images[0]
+                    else:
+                        return ""
+                except Exception:
+                    return ""
+            else:
+                image = Image.open(image_path)
             text = pytesseract.image_to_string(image, lang=self.settings.ocr_language)
             return text.strip()[:2000]
         except Exception:

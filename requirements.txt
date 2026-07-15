@@ -32,3 +32,4 @@ langgraph>=0.2.0
 langchain-core>=0.3.0
 orjson>=3.10.0
 bleach>=6.1.0
+cryptography>=42.0.0

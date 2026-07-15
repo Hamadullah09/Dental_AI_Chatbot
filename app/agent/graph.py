@@ -68,12 +68,33 @@ def retrieve_visuals(state: AgentState) -> AgentState:
         return state
 
     try:
-        from app.services.rag import RAGService
+        from app.services.rag import RAGService, RetrievedChunk, RetrievedVisual
+        from app.schemas import SourceCitation
+
         rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
 
-        visuals = rag.retrieve_visuals(query, top_k=top_k, filters=state.filters)
+        retrieved_chunks_for_visuals = []
+        for chunk_dict in state.reranked_chunks[:top_k]:
+            citation_data = chunk_dict.get("citation", {})
+            retrieved_chunks_for_visuals.append(RetrievedChunk(
+                text=chunk_dict.get("text", ""),
+                citation=SourceCitation(
+                    source_type=citation_data.get("source_type", "pdf"),
+                    document_id=citation_data.get("document_id"),
+                    document_name=citation_data.get("document_name", "Unknown"),
+                    page_number=citation_data.get("page_number"),
+                    chunk_index=citation_data.get("chunk_index"),
+                    score=citation_data.get("score"),
+                ),
+                metadata={},
+                vector_score=chunk_dict.get("vector_score", 0),
+                keyword_score=chunk_dict.get("keyword_score", 0),
+                rerank_score=chunk_dict.get("rerank_score", 0),
+            ))
+
+        visuals = rag.retrieve_visuals(query, chunks=retrieved_chunks_for_visuals, top_k=top_k, filters=state.filters)
         state.retrieved_visuals = [
             {
                 "visual_id": v.citation.visual_id,

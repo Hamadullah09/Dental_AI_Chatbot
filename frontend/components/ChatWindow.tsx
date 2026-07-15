@@ -8,8 +8,6 @@ interface ChatWindowProps {
   messages: Message[];
   isLoading: boolean;
   onQuickAction: (actionText: string) => void;
-  onOpenModal: (modalName: string) => void;
-  onTriggerFileUpload: () => void;
   onStatus: (status: string) => void;
   onRetryMessage: (question: string) => void;
   chatWindowRef: React.RefObject<HTMLDivElement>;

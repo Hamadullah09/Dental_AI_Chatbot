@@ -15,7 +15,11 @@ _client: redis.Redis | None = None
 def get_redis() -> redis.Redis:
     global _pool, _client
     if _client is not None:
-        return _client
+        try:
+            _client.ping()
+            return _client
+        except redis.RedisError:
+            close_redis()
     settings = get_settings()
     _pool = redis.ConnectionPool.from_url(
         settings.redis_url,

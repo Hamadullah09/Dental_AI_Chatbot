@@ -17,7 +17,7 @@ SYMPTOM_KEYWORDS = {
 TREATMENT_KEYWORDS = {
     "treatment", "therapy", "procedure", "surgery", "extraction",
     "root canal", "crown", "bridge", "implant", "filling", "whitening",
-    "orthodontic", "braces", "aligner", " veneer", "scaling",
+    "orthodontic", "braces", "aligner",     "veneer", "scaling",
 }
 
 EMERGENCY_KEYWORDS = {
@@ -246,7 +246,11 @@ def validate_citations(state: AgentState) -> AgentState:
 
     validated_sources = []
     for source in state.sources:
-        if source.document_name and source.document_name != "Unknown":
+        if isinstance(source, dict):
+            doc_name = source.get("document_name", "Unknown")
+        else:
+            doc_name = getattr(source, "document_name", "Unknown")
+        if doc_name and doc_name != "Unknown":
             validated_sources.append(source)
 
     state.sources = validated_sources
@@ -285,11 +289,13 @@ def format_response(state: AgentState) -> AgentState:
 
 
 def handle_error(state: AgentState) -> AgentState:
-    if state.error and state.retry_count < state.max_retries:
+    if state.error is None:
+        return state
+    if state.retry_count < state.max_retries:
         state.retry_count += 1
         state.error = None
         state.add_trace("error_recovery", "retrying", f"Retry {state.retry_count}/{state.max_retries}")
-    elif state.error:
+    else:
         state.answer = "I encountered an issue processing your request. Please try again or contact support."
         state.answer_mode = "error"
         state.add_trace("error_recovery", "failed", state.error)

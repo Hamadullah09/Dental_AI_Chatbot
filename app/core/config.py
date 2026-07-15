@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "Dental AI Chatbot"
     environment: str = "development"
     api_prefix: str = "/api"
-    cors_origins: str = "*"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     database_url: str = "sqlite:///./dental_ai.db"
     db_pool_size: int = 20
