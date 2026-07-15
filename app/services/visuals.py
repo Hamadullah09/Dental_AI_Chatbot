@@ -146,6 +146,22 @@ def extract_with_pymupdf(
             chunks = page_chunks.get(page_number, [])
             nearby_text = nearby_text_for_page(chunks, page_text)
 
+            if not page_text.strip() and not chunks:
+                snapshot_path = output_dir / f"page_{page_number:04d}_snapshot.png"
+                matrix = fitz.Matrix(settings.visual_page_snapshot_zoom, settings.visual_page_snapshot_zoom)
+                page.get_pixmap(matrix=matrix, alpha=False).save(snapshot_path)
+                visuals.append(
+                    build_visual(
+                        document=document,
+                        page_number=page_number,
+                        visual_type="page_snapshot",
+                        image_path=snapshot_path,
+                        caption_text="Scanned page snapshot",
+                        nearby_text=nearby_text,
+                        related_chunk_ids=[chunk.qdrant_point_id for chunk in chunks[:4]],
+                    )
+                )
+
             snapshot_path = output_dir / f"page_{page_number:04d}_snapshot.png"
             if captions:
                 matrix = fitz.Matrix(settings.visual_page_snapshot_zoom, settings.visual_page_snapshot_zoom)

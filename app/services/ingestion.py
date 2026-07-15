@@ -279,6 +279,24 @@ class IngestionService:
             document.content_hash = stable_content_hash(" ".join(chunk.text for chunk in chunks[:50]))
             for message, level in parse_log_buffer[-80:]:
                 db.add(DocumentIngestionLog(document_id=document.id, level=level, message=message))
+            points: list[qmodels.PointStruct] = []
+            db_chunks: list[DocumentChunk] = []
+            existing_chunk_count = db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).count()
+            if existing_chunk_count:
+                self.set_progress(db, document, 72, "Replacing old chunks", log_message="Removing previous chunks and vector points for this document.")
+                db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
+                commit_with_retry(db)
+                self.delete_document_vectors(document.id, log=log_parse_event)
+            else:
+                db.add(
+                    DocumentIngestionLog(
+                        document_id=document.id,
+                        level="info",
+                        message="No previous chunks found for this document; skipping old vector cleanup.",
+                    )
+                )
+                commit_with_retry(db)
+
             self.set_progress(
                 db,
                 document,
@@ -287,9 +305,90 @@ class IngestionService:
                 log_message=(
                     f"Parsed {parsed.pages_total} pages into {len(chunks)} chunks."
                     + (f" OCR was used on scanned pages." if parsed.ocr_used else "")
+                    if chunks
+                    else "No text chunks were extracted; continuing with visual indexing if available."
                 ),
             )
-            if not chunks:
+
+            if chunks:
+                self.set_progress(db, document, 60, "Creating embeddings", log_message=f"Creating embeddings for {len(chunks)} chunks.")
+                vectors = self.encode_chunks(chunks)
+                check_timeout("embedding generation")
+
+                for chunk, vector in zip(chunks, vectors):
+                    point_id = str(uuid.uuid4())
+                    quality = assess_chunk_quality(chunk.text)
+                    canonical_title = document.canonical_title or document.title or document.original_filename
+                    specialty = document.specialty or infer_dental_specialty(canonical_title)
+                    topic = infer_chunk_topic(f"{canonical_title} {chunk.text[:500]}", specialty)
+                    difficulty_level = infer_difficulty_level(canonical_title)
+                    language = document.language or "English"
+                    chunk_hash = stable_content_hash(chunk.text)
+                    section_title = chunk.section_title or infer_section_title(chunk.text)
+                    chapter_title = chunk.chapter_title or ""
+                    payload = {
+                        "payload_type": "text",
+                        "chunk_id": point_id,
+                        "text": chunk.text,
+                        "document_id": document.id,
+                        "document_name": document.original_filename,
+                        "canonical_document_title": canonical_title,
+                        "book_title": canonical_title,
+                        "title": canonical_title,
+                        "author_or_source": document.author_or_source,
+                        "publisher": getattr(document, "publisher", None),
+                        "edition": document.edition,
+                        "year": document.publication_year,
+                        "document_type": document.document_type.value,
+                        "trust_level": document.trust_level.value,
+                        "review_status": document.review_status.value,
+                        "specialty": specialty,
+                        "dental_specialty": specialty,
+                        "topic": topic,
+                        "difficulty_level": difficulty_level,
+                        "language": language,
+                        "file_hash": document.file_hash,
+                        "content_hash": chunk_hash,
+                        "section_title": section_title,
+                        "chapter_title": chapter_title,
+                        "source": document.original_filename,
+                        "page_number": chunk.page_number,
+                        "chunk_index": chunk.chunk_index,
+                        "quality_score": quality.quality_score,
+                        "is_noisy": quality.is_noisy,
+                        "noise_reasons": quality.noise_reasons,
+                    }
+                    points.append(qmodels.PointStruct(id=point_id, vector=vector, payload=payload))
+                    db_chunks.append(
+                        DocumentChunk(
+                            document_id=document.id,
+                            qdrant_point_id=point_id,
+                            chunk_index=chunk.chunk_index,
+                            page_number=chunk.page_number,
+                            text=chunk.text,
+                            token_estimate=max(1, len(chunk.text.split())),
+                            quality_score=quality.quality_score,
+                            is_noisy=quality.is_noisy,
+                            noise_reasons=json.dumps(quality.noise_reasons),
+                            canonical_document_title=canonical_title,
+                            section_title=section_title,
+                            chapter_title=chapter_title,
+                            dental_specialty=specialty,
+                            topic=topic,
+                            difficulty_level=difficulty_level,
+                            language=language,
+                            trust_level=document.trust_level.value,
+                            review_status=document.review_status.value,
+                            content_hash=chunk_hash,
+                        )
+                    )
+
+                self.set_progress(db, document, 88, "Writing vector index", log_message=f"Writing {len(points)} chunks to the vector store.")
+                self.upsert_points_in_batches(points, log=log_parse_event)
+                check_timeout("text vector upsert")
+                db.bulk_save_objects(db_chunks)
+                commit_with_retry(db)
+            elif not self.settings.enable_multimodal_rag:
                 ocr_details = ""
                 if parsed.ocr_attempted_pages:
                     recent_ocr_logs = [
@@ -305,101 +404,15 @@ class IngestionService:
                     + ocr_details
                 )
 
-            self.set_progress(db, document, 60, "Creating embeddings", log_message=f"Creating embeddings for {len(chunks)} chunks.")
-            vectors = self.encode_chunks(chunks)
-            check_timeout("embedding generation")
-            points: list[qmodels.PointStruct] = []
-            db_chunks: list[DocumentChunk] = []
-
-            self.set_progress(db, document, 72, "Replacing old chunks", log_message="Removing previous chunks and vector points for this document.")
-            existing_chunk_count = db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).count()
-            db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
-            commit_with_retry(db)
-            if existing_chunk_count:
-                self.delete_document_vectors(document.id, log=log_parse_event)
-            else:
+            if not chunks:
                 db.add(
                     DocumentIngestionLog(
                         document_id=document.id,
                         level="info",
-                        message="No previous chunks found for this document; skipping old vector cleanup.",
+                        message="No text chunks were extracted; continuing with multimodal visual indexing.",
                     )
                 )
                 commit_with_retry(db)
-
-            for chunk, vector in zip(chunks, vectors):
-                point_id = str(uuid.uuid4())
-                quality = assess_chunk_quality(chunk.text)
-                canonical_title = document.canonical_title or document.title or document.original_filename
-                specialty = document.specialty or infer_dental_specialty(canonical_title)
-                topic = infer_chunk_topic(f"{canonical_title} {chunk.text[:500]}", specialty)
-                difficulty_level = infer_difficulty_level(canonical_title)
-                language = document.language or "English"
-                chunk_hash = stable_content_hash(chunk.text)
-                section_title = chunk.section_title or infer_section_title(chunk.text)
-                chapter_title = chunk.chapter_title or ""
-                payload = {
-                    "payload_type": "text",
-                    "chunk_id": point_id,
-                    "text": chunk.text,
-                    "document_id": document.id,
-                    "document_name": document.original_filename,
-                    "canonical_document_title": canonical_title,
-                    "book_title": canonical_title,
-                    "title": canonical_title,
-                    "author_or_source": document.author_or_source,
-                    "publisher": getattr(document, "publisher", None),
-                    "edition": document.edition,
-                    "year": document.publication_year,
-                    "document_type": document.document_type.value,
-                    "trust_level": document.trust_level.value,
-                    "review_status": document.review_status.value,
-                    "specialty": specialty,
-                    "dental_specialty": specialty,
-                    "topic": topic,
-                    "difficulty_level": difficulty_level,
-                    "language": language,
-                    "file_hash": document.file_hash,
-                    "content_hash": chunk_hash,
-                    "section_title": section_title,
-                    "chapter_title": chapter_title,
-                    "source": document.original_filename,
-                    "page_number": chunk.page_number,
-                    "chunk_index": chunk.chunk_index,
-                    "quality_score": quality.quality_score,
-                    "is_noisy": quality.is_noisy,
-                    "noise_reasons": quality.noise_reasons,
-                }
-                points.append(qmodels.PointStruct(id=point_id, vector=vector, payload=payload))
-                db_chunks.append(
-                    DocumentChunk(
-                        document_id=document.id,
-                        qdrant_point_id=point_id,
-                        chunk_index=chunk.chunk_index,
-                        page_number=chunk.page_number,
-                        text=chunk.text,
-                        token_estimate=max(1, len(chunk.text.split())),
-                        quality_score=quality.quality_score,
-                        is_noisy=quality.is_noisy,
-                        noise_reasons=json.dumps(quality.noise_reasons),
-                        canonical_document_title=canonical_title,
-                        section_title=section_title,
-                        chapter_title=chapter_title,
-                        dental_specialty=specialty,
-                        topic=topic,
-                        difficulty_level=difficulty_level,
-                        language=language,
-                        trust_level=document.trust_level.value,
-                        review_status=document.review_status.value,
-                        content_hash=chunk_hash,
-                    )
-                )
-
-            self.set_progress(db, document, 88, "Writing vector index", log_message=f"Writing {len(points)} chunks to the vector store.")
-            self.upsert_points_in_batches(points, log=log_parse_event)
-            check_timeout("text vector upsert")
-            db.bulk_save_objects(db_chunks)
-            commit_with_retry(db)
             visual_count = 0
             if self.settings.enable_multimodal_rag:
                 self.set_progress(
@@ -429,6 +442,23 @@ class IngestionService:
                     )
                 )
                 commit_with_retry(db)
+            if not chunks and visual_count == 0:
+                ocr_details = ""
+                if parsed.ocr_attempted_pages:
+                    recent_ocr_logs = [
+                        message
+                        for message, level in parse_log_buffer[-20:]
+                        if "ocr" in message.lower() or level == "warning"
+                    ]
+                    if recent_ocr_logs:
+                        ocr_details = " Last OCR detail: " + recent_ocr_logs[-1]
+                raise ValueError(
+                    "No extractable text was found in this PDF. If this is a scanned PDF, install OCR support "
+                    "(Tesseract, Poppler, pytesseract, and pdf2image) and re-ingest it."
+                    + ocr_details
+                )
+            if not chunks and visual_count > 0:
+                document.extraction_method = "visual_only"
             document.status = DocumentStatus.ready
             document.chunk_count = len(points)
             document.ingestion_progress = 100

@@ -720,6 +720,7 @@ class RAGService:
             f"chunk {chunk.citation.chunk_index}\n{chunk.text}"
             for idx, chunk in enumerate(chunks, start=1)
         )
+        context = context or "No retrieved text chunks were available."
         visual_context = "\n\n".join(
             f"[Visual {idx}] {item.visual.citation.document_name}, page {item.visual.citation.page_number}, "
             f"type {item.visual.citation.visual_type}\nObservation: {item.observation}"
@@ -764,16 +765,17 @@ class RAGService:
         visual_observations: list[VisualObservation] | None = None,
         user_role: str | None = None,
     ) -> str:
-        if not chunks:
+        llm = getattr(self, "llm", None)
+        if not llm or not llm.is_configured:
+            return self.generate_extract_answer(question, chunks)
+
+        if not chunks and not visual_observations:
             return (
                 "I do not have enough relevant evidence in the uploaded documents to answer that reliably. "
                 "For symptoms or treatment decisions, please consult a licensed dental professional."
             )
 
         prompt = self.build_prompt(question, chunks, visual_observations, user_role=user_role)
-        llm = getattr(self, "llm", None)
-        if not llm or not llm.is_configured:
-            return service_unavailable_answer(question)
 
         try:
             answer = llm.generate(
@@ -884,6 +886,8 @@ class RAGService:
             logger.exception("rag.retrieve.failed")
             chunks = []
         wants_web = bool(filters.get("search_web"))
+        retrieved_visuals: list[RetrievedVisual] = []
+        visual_observations: list[VisualObservation] = []
 
         if wants_web:
             try:
@@ -910,7 +914,15 @@ class RAGService:
                     "insufficient_evidence",
                 )
 
-        if not chunks:
+        if self.settings.enable_multimodal_rag or chunks:
+            try:
+                retrieved_visuals = self.retrieve_visuals(question, chunks, filters=filters)
+            except Exception:
+                logger.exception("rag.visual_retrieve.failed")
+                retrieved_visuals = []
+            visual_observations = self.analyze_retrieved_visuals(question, retrieved_visuals)
+
+        if not chunks and not visual_observations:
             fallback_answer = self.generate_general_fallback_answer(question, user_role=user_role)
             if fallback_answer:
                 return RAGAnswer(fallback_answer, [], "general_fallback")
@@ -920,8 +932,6 @@ class RAGService:
                 "insufficient_evidence",
             )
 
-        retrieved_visuals = self.retrieve_visuals(question, chunks, filters=filters)
-        visual_observations = self.analyze_retrieved_visuals(question, retrieved_visuals)
         usable_visuals = [item.visual for item in visual_observations if item.observation not in {"VISUAL_NOT_RELEVANT", "VISUAL_UNREADABLE"}]
 
         local_answer = self.generate_answer(question, chunks, visual_observations, user_role=user_role)

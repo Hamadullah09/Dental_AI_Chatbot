@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096
     ollama_num_predict: int = 512
     ollama_top_p: float = 0.8
-    ollama_timeout_seconds: int = 180
-    ollama_vision_timeout_seconds: int = 90
+    ollama_timeout_seconds: int = 300
+    ollama_vision_timeout_seconds: int = 180
     ollama_keep_alive: str = "0s"
     dataset_llm_provider: str = "ollama"
     dataset_generation_stale_minutes: int = 20
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploaded_docs")
     extracted_visuals_dir: Path = Path("uploads/extracted_visuals")
     max_upload_mb: int = 200
-    ingestion_timeout_seconds: int = 7200
+    ingestion_timeout_seconds: int = 14400
     chunk_size: int = 1000
     chunk_overlap: int = 180
     embedding_batch_size: int = 64

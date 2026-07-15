@@ -6,7 +6,7 @@ type ApiOptions = RequestInit & {
 };
 
 const CHAT_GENERATION_TIMEOUT_MS = Number(
-  process.env.NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS || process.env.NEXT_PUBLIC_CHAT_BACKEND_TIMEOUT_MS || 180000
+  process.env.NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS || process.env.NEXT_PUBLIC_CHAT_BACKEND_TIMEOUT_MS || 300000
 );
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 

@@ -55,13 +55,11 @@ Required for production-like use:
 ```bash
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 OPENAI_API_KEY=your-openai-api-key
-BACKUP_OPENAI_API_KEY=your-openai-api-key
-BACKUP_OPENAI_MODEL=gpt-4o-mini
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3:14b
 OLLAMA_NUM_CTX=4096
-OLLAMA_TIMEOUT_SECONDS=180
+OLLAMA_TIMEOUT_SECONDS=300
 DATASET_LLM_PROVIDER=openai
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
@@ -91,21 +89,14 @@ Keep this value only in `.env`. Never commit it to GitHub.
 
 For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
 
-Optional frontend backup mode:
+Set the frontend chat timeout to match your model speed:
 
 ```bash
-BACKUP_OPENAI_API_KEY=your-openai-api-key
-BACKUP_OPENAI_MODEL=gpt-4o-mini
-BACKUP_OPENAI_TIMEOUT_MS=3000
-NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT=
 NEXT_PUBLIC_BACKEND_HEALTH_TIMEOUT_MS=1500
-NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS=60000
-NEXT_PUBLIC_OPENAI_BACKUP_TIMEOUT_MS=3000
+NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS=300000
 ```
 
-Before chat submission, the browser checks `/api/health` for up to `NEXT_PUBLIC_BACKEND_HEALTH_TIMEOUT_MS`. If health fails, it immediately uses backup mode. If health passes, the primary `/api/chat` request can run for up to `NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS`, so a healthy but slow Qwen3:14B generation is not mistaken for a failure.
-
-For local development, backup mode uses the Next.js route `/api/openai-fallback`. For Expo or production, deploy an independent serverless backup endpoint and set `NEXT_PUBLIC_BACKUP_OPENAI_ENDPOINT` to that URL. Backup answers are labeled as general dental guidance, return `answer_mode="openai_backup"`, and always use `sources=[]` so no uploaded-document citations are faked. If OpenAI backup is not configured, unreachable, or times out, the UI returns an instant `answer_mode="instant_backup_unavailable"` safety response instead of spinning.
+The app sends a single grounded chat request to `/api/chat`; there is no OpenAI backup route in the main flow. If the backend is healthy but the model is slow, the longer request timeout gives Qwen more time to finish before the UI shows a failure.
 
 Optional trusted web search:
 
@@ -289,7 +280,7 @@ The script stores document and chunk metadata in SQL and vectors in Qdrant. Each
 - `page_number`
 - `chunk_index`
 
-When `ENABLE_MULTIMODAL_RAG=true`, PDF ingestion also extracts page snapshots, embedded images, figure regions, and tables into `uploads/extracted_visuals/{document_id}/`, stores metadata in `document_visuals`, and indexes visual captions/descriptions in Qdrant with `payload_type="visual"`.
+When `ENABLE_MULTIMODAL_RAG=true`, PDF ingestion also extracts page snapshots, embedded images, figure regions, and tables into `uploads/extracted_visuals/{document_id}/`, stores metadata in `document_visuals`, and indexes visual captions/descriptions in Qdrant with `payload_type="visual"`. If a scanned PDF has no extractable text, the pipeline now keeps going with visual-only indexing instead of failing immediately.
 
 Visual maintenance scripts:
 
