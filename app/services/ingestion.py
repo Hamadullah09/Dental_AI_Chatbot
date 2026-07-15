@@ -2,6 +2,8 @@ import re
 import uuid
 import hashlib
 import unicodedata
+import os
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -751,6 +753,7 @@ def extract_page_text_with_ocr(
     if settings.tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
 
+    poppler_path = settings.poppler_path or detect_poppler_path()
     convert_options = {
         "first_page": page_number,
         "last_page": page_number,
@@ -758,8 +761,8 @@ def extract_page_text_with_ocr(
         "fmt": "png",
         "thread_count": 1,
     }
-    if settings.poppler_path:
-        convert_options["poppler_path"] = settings.poppler_path
+    if poppler_path:
+        convert_options["poppler_path"] = poppler_path
 
     images = []
     try:
@@ -779,7 +782,16 @@ def extract_page_text_with_ocr(
         return text
     except Exception as exc:
         if log:
-            log(f"Page {page_number}: OCR failed ({exc}).", "warning")
+            log(
+                f"Page {page_number}: OCR failed ({exc}). "
+                f"Diagnostics: pdf_exists={pdf_path.exists()}, pdf_path={pdf_path}, "
+                f"poppler_path={poppler_path or 'PATH'}, "
+                f"pdfinfo={shutil.which('pdfinfo') or 'missing'}, "
+                f"pdftoppm={shutil.which('pdftoppm') or 'missing'}, "
+                f"tesseract={shutil.which('tesseract') or 'missing'}, "
+                f"PATH={os.environ.get('PATH', '')}",
+                "warning",
+            )
         return ""
     finally:
         for image in images:
@@ -787,6 +799,14 @@ def extract_page_text_with_ocr(
                 image.close()
             except Exception:
                 pass
+
+
+def detect_poppler_path() -> str | None:
+    pdfinfo = shutil.which("pdfinfo")
+    pdftoppm = shutil.which("pdftoppm")
+    if pdfinfo and pdftoppm:
+        return str(Path(pdfinfo).parent)
+    return None
 
 
 def is_local_qdrant_storage_error(exc: Exception) -> bool:
