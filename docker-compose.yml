@@ -1,9 +1,32 @@
 services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - dental-network
+
   api:
     build: .
     restart: unless-stopped
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     extra_hosts:
@@ -11,6 +34,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://dental:${POSTGRES_PASSWORD:-change-this-postgres-password}@postgres:5432/dental_ai
       QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       UPLOAD_DIR: /app/uploaded_docs
       EXTRACTED_VISUALS_DIR: /app/uploads/extracted_visuals
@@ -23,12 +47,16 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 40s
+    networks:
+      - dental-network
 
   frontend:
     build:
@@ -38,7 +66,7 @@ services:
         NEXT_PUBLIC_API_URL: ""
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       API_PROXY_URL: http://api:8000
       NEXT_PUBLIC_API_URL: ""
@@ -51,6 +79,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - dental-network
 
   postgres:
     image: postgres:16-alpine
@@ -68,6 +98,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - dental-network
 
   qdrant:
     image: qdrant/qdrant:v1.9.2
@@ -83,7 +115,76 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - dental-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dental-network
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dental-network
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dental-network
 
 volumes:
   postgres_data:
   qdrant_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  dental-network:
+    driver: bridge

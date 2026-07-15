@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from app.agent.state import AgentState
+from app.agent.nodes.planner import detect_intent, rewrite_query, build_context, validate_citations, format_response, handle_error
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.services.rag import RAGService
+
+logger = get_logger(__name__)
+
+
+def retrieve_chunks(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    try:
+        rag = RAGService()
+        query = state.rewritten_query or state.question
+        top_k = state.top_k or settings.retrieval_top_k
+
+        chunks = rag.retrieve(query, top_k=top_k, filters=state.filters)
+        state.retrieved_chunks = [
+            {
+                "text": chunk.text,
+                "citation": {
+                    "source_type": chunk.citation.source_type,
+                    "document_id": chunk.citation.document_id,
+                    "document_name": chunk.citation.document_name,
+                    "page_number": chunk.citation.page_number,
+                    "chunk_index": chunk.citation.chunk_index,
+                    "score": chunk.citation.score,
+                },
+                "vector_score": chunk.vector_score,
+                "keyword_score": chunk.keyword_score,
+                "rerank_score": chunk.rerank_score,
+            }
+            for chunk in chunks
+        ]
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("hybrid_retriever", "completed", f"{len(chunks)} chunks retrieved", duration_ms)
+        logger.info(f"Retrieved {len(chunks)} chunks in {duration_ms:.1f}ms")
+
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.error = str(exc)
+        state.add_trace("hybrid_retriever", "error", str(exc), duration_ms)
+        logger.error(f"Retrieval failed: {exc}")
+
+    return state
+
+
+def retrieve_visuals(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    if not settings.enable_multimodal_rag:
+        state.add_trace("visual_retriever", "skipped", "Multimodal RAG disabled")
+        return state
+
+    if state.intent not in ("visual", "general") and not state.search_web:
+        state.add_trace("visual_retriever", "skipped", f"Intent '{state.intent}' does not need visuals")
+        return state
+
+    try:
+        rag = RAGService()
+        query = state.rewritten_query or state.question
+        top_k = state.top_k or settings.retrieval_top_k
+
+        visuals = rag.retrieve_visuals(query, top_k=top_k, filters=state.filters)
+        state.retrieved_visuals = [
+            {
+                "visual_id": v.citation.visual_id,
+                "document_name": v.citation.document_name,
+                "page_number": v.citation.page_number,
+                "visual_type": v.citation.visual_type,
+                "image_path": v.citation.image_path,
+                "image_url": v.citation.image_url,
+                "caption_text": v.citation.caption_text,
+                "generated_description": v.citation.generated_description,
+                "score": v.citation.score,
+            }
+            for v in visuals
+        ]
+
+        if visuals:
+            visual_parts = []
+            for v in visuals[:2]:
+                desc = v.citation.generated_description or v.citation.caption_text or "No description"
+                visual_parts.append(
+                    f"[Visual: {v.citation.visual_type} from {v.citation.document_name}, "
+                    f"page {v.citation.page_number}]\n{desc}"
+                )
+            state.visual_context = "\n\n".join(visual_parts)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("visual_retriever", "completed", f"{len(visuals)} visuals", duration_ms)
+        logger.info(f"Retrieved {len(visuals)} visuals in {duration_ms:.1f}ms")
+
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("visual_retriever", "error", str(exc), duration_ms)
+        logger.warning(f"Visual retrieval failed: {exc}")
+
+    return state
+
+
+def rerank_results(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    def _score_chunk(chunk: dict) -> float:
+        vector = chunk.get("vector_score", 0)
+        keyword = chunk.get("keyword_score", 0)
+        rerank = chunk.get("rerank_score", 0)
+        return rerank * 0.4 + vector * 0.35 + keyword * 0.25
+
+    state.reranked_chunks = sorted(state.retrieved_chunks, key=_score_chunk, reverse=True)
+
+    def _score_visual(visual: dict) -> float:
+        return visual.get("score", 0) or 0
+
+    state.reranked_visuals = sorted(state.retrieved_visuals, key=_score_visual, reverse=True)
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    state.add_trace("reranker", "completed", f"{len(state.reranked_chunks)} chunks, {len(state.reranked_visuals)} visuals", duration_ms)
+    return state
+
+
+def generate_answer(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    try:
+        from app.services.llm import LLMService
+        llm = LLMService()
+
+        system_prompt = _build_system_prompt(state)
+        user_prompt = _build_user_prompt(state)
+
+        answer = llm.generate(user_prompt, system_prompt=system_prompt)
+        state.answer = answer
+        state.answer_mode = "rag_grounded" if state.retrieved_chunks else "general_fallback"
+
+        for chunk in state.reranked_chunks[:5]:
+            citation = chunk.get("citation", {})
+            state.sources.append({
+                "source_type": citation.get("source_type", "pdf"),
+                "document_id": citation.get("document_id"),
+                "document_name": citation.get("document_name", "Unknown"),
+                "page_number": citation.get("page_number"),
+                "chunk_index": citation.get("chunk_index"),
+                "score": citation.get("score"),
+            })
+
+        for visual in state.reranked_visuals[:2]:
+            state.visuals.append({
+                "visual_id": visual.get("visual_id", ""),
+                "document_id": visual.get("document_id"),
+                "document_name": visual.get("document_name", "Unknown"),
+                "page_number": visual.get("page_number"),
+                "visual_type": visual.get("visual_type", "unknown"),
+                "image_path": visual.get("image_path", ""),
+                "image_url": visual.get("image_url", ""),
+                "caption_text": visual.get("caption_text"),
+                "generated_description": visual.get("generated_description"),
+                "score": visual.get("score"),
+            })
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("llm", "completed", f"Generated {len(answer)} chars", duration_ms)
+        logger.info(f"LLM generated {len(answer)} chars in {duration_ms:.1f}ms")
+
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.error = str(exc)
+        state.add_trace("llm", "error", str(exc), duration_ms)
+        logger.error(f"LLM generation failed: {exc}")
+
+    return state
+
+
+def _build_system_prompt(state: AgentState) -> str:
+    settings = get_settings()
+    base = (
+        "You are DentalGPT, an expert dental AI assistant. You provide accurate, evidence-based "
+        "dental information grounded in the provided context. Always cite your sources. "
+        "Never provide medical advice that replaces professional dental consultation. "
+        "Include the medical disclaimer at the end of every response.\n\n"
+    )
+    base += f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
+
+    if state.intent == "emergency":
+        base += "IMPORTANT: This appears to be an emergency query. Emphasize seeking immediate professional dental care.\n\n"
+    elif state.intent == "visual":
+        base += "The user is asking about visual content. Reference any provided images, diagrams, or figures.\n\n"
+
+    if state.context_text:
+        base += f"Context from dental knowledge base:\n{state.context_text}\n\n"
+
+    return base
+
+
+def _build_user_prompt(state: AgentState) -> str:
+    prompt = state.question
+    if state.conversation_history:
+        history_text = "\n".join(
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content'][:200]}"
+            for msg in state.conversation_history[-4:]
+        )
+        prompt = f"Previous conversation:\n{history_text}\n\nCurrent question: {prompt}"
+    return prompt
+
+
+def build_langgraph():
+    from langgraph.graph import StateGraph, END
+
+    workflow = StateGraph(AgentState)
+
+    workflow.add_node("detect_intent", detect_intent)
+    workflow.add_node("rewrite_query", rewrite_query)
+    workflow.add_node("retrieve_chunks", retrieve_chunks)
+    workflow.add_node("retrieve_visuals", retrieve_visuals)
+    workflow.add_node("rerank_results", rerank_results)
+    workflow.add_node("build_context", build_context)
+    workflow.add_node("generate_answer", generate_answer)
+    workflow.add_node("validate_citations", validate_citations)
+    workflow.add_node("format_response", format_response)
+    workflow.add_node("handle_error", handle_error)
+
+    workflow.set_entry_point("detect_intent")
+    workflow.add_edge("detect_intent", "rewrite_query")
+    workflow.add_edge("rewrite_query", "retrieve_chunks")
+    workflow.add_edge("retrieve_chunks", "retrieve_visuals")
+    workflow.add_edge("retrieve_visuals", "rerank_results")
+    workflow.add_edge("rerank_results", "build_context")
+    workflow.add_edge("build_context", "generate_answer")
+    workflow.add_edge("generate_answer", "validate_citations")
+    workflow.add_edge("validate_citations", "format_response")
+    workflow.add_edge("format_response", END)
+
+    workflow.add_conditional_edges(
+        "handle_error",
+        lambda state: "retry" if state.error and state.retry_count < state.max_retries else "end",
+        {"retry": "retrieve_chunks", "end": "format_response"},
+    )
+
+    return workflow.compile()

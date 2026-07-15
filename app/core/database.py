@@ -11,7 +11,12 @@ from app.core.config import get_settings
 settings = get_settings()
 is_sqlite = settings.database_url.startswith("sqlite")
 connect_args = {"check_same_thread": False, "timeout": 60} if is_sqlite else {}
-engine_kwargs = {"poolclass": NullPool} if is_sqlite else {"pool_pre_ping": True}
+engine_kwargs: dict = {"poolclass": NullPool} if is_sqlite else {
+    "pool_pre_ping": True,
+    "pool_size": settings.db_pool_size,
+    "max_overflow": settings.db_max_overflow,
+    "pool_timeout": settings.db_pool_timeout,
+}
 engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

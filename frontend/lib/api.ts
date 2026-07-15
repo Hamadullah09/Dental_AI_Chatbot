@@ -136,6 +136,54 @@ export async function sendChat(input: {
   });
 }
 
+export async function* sendChatStream(input: {
+  question: string;
+  session_id?: string | null;
+  document_id?: string | null;
+  search_web?: boolean;
+}, token: string): AsyncGenerator<{type: string; [key: string]: any}, void> {
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
+
+  const response = await fetch(`${getApiBaseUrl()}/api/chat/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new ApiError(data?.detail || "Stream request failed", response.status);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new ApiError("Stream not available", 0);
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") return;
+        try {
+          const parsed = JSON.parse(data);
+          yield parsed;
+        } catch {}
+      }
+    }
+  }
+}
+
 export function uploadChatDocument(file: File, token: string) {
   const form = new FormData();
   form.append("file", file);

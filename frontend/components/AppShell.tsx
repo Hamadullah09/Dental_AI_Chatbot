@@ -63,6 +63,10 @@ export function AppShell({ title, subtitle, children }: {
   const handleOpenModal = (modalName: string) => {
     if (modalName === "admin") {
       router.push("/admin");
+    } else if (modalName === "profile") {
+      router.push("/profile");
+    } else if (modalName === "settings") {
+      router.push("/settings");
     } else {
       setActiveModal(modalName);
     }

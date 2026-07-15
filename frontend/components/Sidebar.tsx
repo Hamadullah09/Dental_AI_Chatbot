@@ -248,7 +248,7 @@ export function Sidebar({
   ] as const;
 
   const accountLinks = [
-    { icon: MessageSquare, label: "Profile", modal: "settings" },
+    { icon: MessageSquare, label: "Profile", modal: "profile" },
     { icon: Settings, label: "Settings", modal: "settings" },
     { icon: CircleHelp, label: "Help", modal: "tips" },
   ] as const;

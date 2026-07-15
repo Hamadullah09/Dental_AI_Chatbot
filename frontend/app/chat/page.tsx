@@ -6,7 +6,7 @@ import { AppShell, useModal } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
 import { ChatWindow } from "@/components/ChatWindow";
 import { ChatInput } from "@/components/ChatInput";
-import { getChatDocument, sendChat, uploadChatDocument } from "@/lib/api";
+import { getChatDocument, sendChat, sendChatStream, uploadChatDocument } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { DocumentItem, Message } from "@/lib/types";
 
@@ -98,61 +98,93 @@ function ChatContent() {
     let scopedDocument = activeDocument;
     const prompt = promptText.trim() || "Summarize this uploaded dental document and answer using only this document.";
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: fileToUpload ? `Attached PDF: ${fileToUpload.name}\n\n${prompt}` : prompt,
-      sources: [],
-      visuals: [],
-      created_at: new Date().toISOString()
-    };
+      const userMessageId = crypto.randomUUID();
+      const assistantMessageId = crypto.randomUUID();
 
-    setMessages((current) => [...current, userMessage]);
-    setQuestion("");
-    setError("");
-    setToast("");
-    setIsLoading(true);
+      setMessages((current) => [...current, {
+        id: userMessageId,
+        role: "user",
+        content: fileToUpload ? `Attached PDF: ${fileToUpload.name}\n\n${prompt}` : prompt,
+        sources: [],
+        visuals: [],
+        created_at: new Date().toISOString()
+      }]);
+      setMessages((current) => [...current, {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        sources: [],
+        visuals: [],
+        created_at: new Date().toISOString()
+      }]);
 
-    try {
-      if (fileToUpload) {
-        setUploadProgress("Uploading PDF for grounded chat...");
-        const uploaded = await uploadChatDocument(fileToUpload, token);
-        setAttachment(null);
-        scopedDocument = await waitForDocumentReady(uploaded.id);
-        setUploadProgress("");
-      }
+      setQuestion("");
+      setError("");
+      setToast("");
+      setIsLoading(true);
 
-      const response = await sendChat({
-        question: prompt,
-        session_id: sessionId,
-        document_id: scopedDocument?.id || null,
-        search_web: searchWeb
-      }, token);
-      
-      // If we created a new session, update search params to sync the URL
-      if (!sessionId && response.session_id) {
-        loadedSessionRef.current = response.session_id;
-        router.push(`/chat?session_id=${response.session_id}`);
-      }
-
-      setSessionId(response.session_id);
-      setMessages((current) => [
-        ...current,
-        {
-          id: response.message_id,
-          role: "assistant",
-          content: response.answer,
-          sources: response.sources,
-          visuals: response.visuals || [],
-          created_at: new Date().toISOString()
+      try {
+        if (fileToUpload) {
+          setUploadProgress("Uploading PDF for grounded chat...");
+          const uploaded = await uploadChatDocument(fileToUpload, token);
+          setAttachment(null);
+          scopedDocument = await waitForDocumentReady(uploaded.id);
+          setUploadProgress("");
         }
-      ]);
-      await refreshSessions();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Chat request failed");
-    } finally {
-      setIsLoading(false);
-    }
+
+        let accumulatedAnswer = "";
+        let finalSources: any[] = [];
+        let finalVisuals: any[] = [];
+        let finalSessionId = sessionId;
+        let finalMode = "rag_grounded";
+
+        for await (const event of sendChatStream({
+          question: prompt,
+          session_id: sessionId,
+          document_id: scopedDocument?.id || null,
+          search_web: searchWeb,
+        }, token)) {
+          if (event.type === "start" && event.session_id) {
+            finalSessionId = event.session_id;
+          } else if (event.type === "content" && event.text) {
+            accumulatedAnswer += event.text;
+            setMessages((current) =>
+              current.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: accumulatedAnswer }
+                  : m
+              )
+            );
+          } else if (event.type === "sources") {
+            finalSources = event.sources || [];
+            finalVisuals = event.visuals || [];
+          } else if (event.type === "metadata") {
+            finalMode = event.answer_mode || "rag_grounded";
+          } else if (event.type === "error") {
+            throw new Error(event.detail || "Stream error");
+          }
+        }
+
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === assistantMessageId
+              ? { ...m, sources: finalSources, visuals: finalVisuals }
+              : m
+          )
+        );
+
+        if (!sessionId && finalSessionId) {
+          loadedSessionRef.current = finalSessionId;
+          router.push(`/chat?session_id=${finalSessionId}`);
+        }
+        setSessionId(finalSessionId);
+        await refreshSessions();
+      } catch (error) {
+        setMessages((current) => current.filter((m) => m.id !== assistantMessageId));
+        setError(error instanceof Error ? error.message : "Chat request failed");
+      } finally {
+        setIsLoading(false);
+      }
   }
 
   // Handle regular chat form submissions
