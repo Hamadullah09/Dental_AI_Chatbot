@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import re
 import time
-from typing import Any
+from typing import Any, Literal
 
 from app.agent.state import AgentState
 from app.core.config import get_settings
@@ -32,9 +31,9 @@ VISUAL_KEYWORDS = {
     "show me", "display", "illustrate",
 }
 
-ROMAN_URDU_INDICATORS = {
-    "kya", "hai", "kaise", "kyun", "kaun", "mein", "tum",
-    "aap", "yeh", "woh", "se", "ko", "ke", "ki", "ka",
+DIRECT_ANSWER_KEYWORDS = {
+    "what is", "define", "who is", "when was", "how old",
+    "hello", "hi", "thanks", "thank you", "goodbye", "bye",
 }
 
 
@@ -50,14 +49,124 @@ def detect_intent(state: AgentState) -> AgentState:
         state.intent = "treatment"
     elif any(word in question_lower for word in SYMPTOM_KEYWORDS):
         state.intent = "symptom"
-    elif any(word in question_lower for word in ROMAN_URDU_INDICATORS):
-        state.intent = "roman_urdu"
+    elif any(phrase in question_lower for phrase in DIRECT_ANSWER_KEYWORDS):
+        state.intent = "direct"
     else:
         state.intent = "general"
 
     duration_ms = (time.perf_counter() - start) * 1000
     state.add_trace("intent_detector", "completed", f"Intent: {state.intent}", duration_ms)
-    logger.info(f"Intent detected: {state.intent} in {duration_ms:.1f}ms")
+    return state
+
+
+def can_answer_directly(state: AgentState) -> Literal["yes", "no"]:
+    if state.intent == "direct":
+        return "yes"
+    if state.intent == "emergency":
+        return "no"
+    question_lower = state.question.lower()
+    greeting_patterns = {"hello", "hi", "hey", "good morning", "good evening", "thanks", "thank you", "bye", "goodbye"}
+    if any(g in question_lower for g in greeting_patterns):
+        return "yes"
+    return "no"
+
+
+def generate_direct_answer(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    question_lower = state.question.lower()
+    if any(g in question_lower for g in {"hello", "hi", "hey", "good morning", "good evening"}):
+        state.answer = "Hello! I'm DentalGPT, your AI dental assistant. How can I help you today?"
+    elif any(g in question_lower for g in {"thanks", "thank you"}):
+        state.answer = "You're welcome! Feel free to ask if you have more dental questions."
+    elif any(g in question_lower for g in {"bye", "goodbye"}):
+        state.answer = "Goodbye! Take care of your dental health!"
+    else:
+        state.answer = settings.medical_disclaimer
+
+    state.answer_mode = "conversational"
+    state.sources = []
+    duration_ms = (time.perf_counter() - start) * 1000
+    state.add_trace("direct_answer", "completed", f"Mode: {state.answer_mode}", duration_ms)
+    return state
+
+
+def has_enough_evidence(state: AgentState) -> Literal["yes", "no"]:
+    if not state.retrieved_chunks:
+        return "no"
+    if state.intent == "emergency":
+        return "yes"
+    good_chunks = [c for c in state.retrieved_chunks if c.get("rerank_score", 0) > 0.5 or c.get("vector_score", 0) > 0.7]
+    if len(good_chunks) >= 2:
+        return "yes"
+    if len(state.retrieved_chunks) >= 3:
+        return "yes"
+    return "no"
+
+
+def search_more(state: AgentState) -> AgentState:
+    start = time.perf_counter()
+    settings = get_settings()
+
+    state.retry_count += 1
+    if state.retry_count > state.max_retries:
+        state.answer = (
+            "I found limited information on this topic in my dental knowledge base. "
+            "I recommend consulting a dental professional for accurate diagnosis and treatment. "
+            f"{settings.medical_disclaimer}"
+        )
+        state.answer_mode = "insufficient_evidence"
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("search_more", "exhausted", "Max retries reached", duration_ms)
+        return state
+
+    try:
+        from app.services.rag import RAGService
+        rag = RAGService()
+        query = state.rewritten_query or state.question
+        top_k = (state.top_k or settings.retrieval_top_k) + (state.retry_count * 3)
+
+        new_chunks = rag.retrieve(query, top_k=top_k, filters=state.filters)
+        existing_ids = {c.get("citation", {}).get("chunk_index") for c in state.retrieved_chunks}
+        for chunk in new_chunks:
+            idx = chunk.citation.chunk_index
+            if idx not in existing_ids:
+                state.retrieved_chunks.append({
+                    "text": chunk.text,
+                    "citation": {
+                        "source_type": chunk.citation.source_type,
+                        "document_id": chunk.citation.document_id,
+                        "document_name": chunk.citation.document_name,
+                        "page_number": chunk.citation.page_number,
+                        "chunk_index": chunk.citation.chunk_index,
+                        "score": chunk.citation.score,
+                    },
+                    "vector_score": chunk.vector_score,
+                    "keyword_score": chunk.keyword_score,
+                    "rerank_score": chunk.rerank_score,
+                })
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("search_more", "completed", f"Added chunks, total: {len(state.retrieved_chunks)}", duration_ms)
+
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("search_more", "error", str(exc), duration_ms)
+
+    return state
+
+
+def respond_with_uncertainty(state: AgentState) -> AgentState:
+    settings = get_settings()
+    state.answer = (
+        "I don't have sufficient information in my dental knowledge base to answer this question accurately. "
+        "This topic may require specialized clinical knowledge or the latest research. "
+        "I recommend consulting a dental professional for accurate information. "
+        f"{settings.medical_disclaimer}"
+    )
+    state.answer_mode = "insufficient_evidence"
+    state.add_trace("uncertainty_responder", "completed", "Insufficient evidence")
     return state
 
 
@@ -72,6 +181,7 @@ def rewrite_query(state: AgentState) -> AgentState:
         state.add_trace("query_rewriter", "skipped", "Query rewriting disabled", duration_ms)
         return state
 
+    import re
     question = state.question.strip()
     variants = [question]
 
@@ -97,17 +207,11 @@ def rewrite_query(state: AgentState) -> AgentState:
     if expanded != question:
         variants.append(expanded)
 
-    if settings.enable_hyde and len(variants) < settings.multi_query_max_variants:
-        definition_pattern = r"^(what|how|define|explain|describe|tell\s+me\s+about)\s+"
-        if re.match(definition_pattern, question, re.IGNORECASE):
-            variants.append(f"Dental clinical definition and explanation of {question.split(None, 3)[-1] if len(question.split()) > 3 else question}")
-
     state.rewritten_query = variants[0] if variants else question
     state.query_variants = variants[:settings.multi_query_max_variants]
 
     duration_ms = (time.perf_counter() - start) * 1000
     state.add_trace("query_rewriter", "completed", f"{len(variants)} variants", duration_ms)
-    logger.info(f"Query rewritten: {len(variants)} variants in {duration_ms:.1f}ms")
     return state
 
 
@@ -123,10 +227,6 @@ def build_context(state: AgentState) -> AgentState:
             page = citation.get("page_number", "")
             page_str = f" (p. {page})" if page else ""
             context_parts.append(f"[Source {i+1}: {doc_name}{page_str}]\n{text}")
-
-    if state.search_web and hasattr(state, "web_results"):
-        for result in getattr(state, "web_results", []):
-            context_parts.append(f"[Web Source: {result.get('title', 'Unknown')}]\n{result.get('content', '')}")
 
     state.context_text = "\n\n---\n\n".join(context_parts)
 
@@ -154,14 +254,14 @@ def validate_citations(state: AgentState) -> AgentState:
     if state.retrieved_chunks and not state.sources:
         for chunk in state.retrieved_chunks[:3]:
             citation = chunk.get("citation", {})
-            state.sources.append(SourceCitation(
-                source_type=citation.get("source_type", "pdf"),
-                document_id=citation.get("document_id"),
-                document_name=citation.get("document_name", "Unknown"),
-                page_number=citation.get("page_number"),
-                chunk_index=citation.get("chunk_index"),
-                score=citation.get("score"),
-            ))
+            state.sources.append({
+                "source_type": citation.get("source_type", "pdf"),
+                "document_id": citation.get("document_id"),
+                "document_name": citation.get("document_name", "Unknown"),
+                "page_number": citation.get("page_number"),
+                "chunk_index": citation.get("chunk_index"),
+                "score": citation.get("score"),
+            })
 
     duration_ms = (time.perf_counter() - start) * 1000
     state.add_trace("citation_validator", "completed", f"{len(state.sources)} validated sources", duration_ms)

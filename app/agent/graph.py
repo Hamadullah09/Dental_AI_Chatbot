@@ -4,10 +4,13 @@ import time
 from typing import Any
 
 from app.agent.state import AgentState
-from app.agent.nodes.planner import detect_intent, rewrite_query, build_context, validate_citations, format_response, handle_error
+from app.agent.nodes.planner import (
+    detect_intent, can_answer_directly, generate_direct_answer,
+    has_enough_evidence, search_more, respond_with_uncertainty,
+    rewrite_query, build_context, validate_citations, format_response, handle_error,
+)
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services.rag import RAGService
 
 logger = get_logger(__name__)
 
@@ -17,6 +20,7 @@ def retrieve_chunks(state: AgentState) -> AgentState:
     settings = get_settings()
 
     try:
+        from app.services.rag import RAGService
         rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
@@ -42,13 +46,11 @@ def retrieve_chunks(state: AgentState) -> AgentState:
 
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("hybrid_retriever", "completed", f"{len(chunks)} chunks retrieved", duration_ms)
-        logger.info(f"Retrieved {len(chunks)} chunks in {duration_ms:.1f}ms")
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         state.error = str(exc)
         state.add_trace("hybrid_retriever", "error", str(exc), duration_ms)
-        logger.error(f"Retrieval failed: {exc}")
 
     return state
 
@@ -66,6 +68,7 @@ def retrieve_visuals(state: AgentState) -> AgentState:
         return state
 
     try:
+        from app.services.rag import RAGService
         rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
@@ -98,19 +101,16 @@ def retrieve_visuals(state: AgentState) -> AgentState:
 
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("visual_retriever", "completed", f"{len(visuals)} visuals", duration_ms)
-        logger.info(f"Retrieved {len(visuals)} visuals in {duration_ms:.1f}ms")
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("visual_retriever", "error", str(exc), duration_ms)
-        logger.warning(f"Visual retrieval failed: {exc}")
 
     return state
 
 
 def rerank_results(state: AgentState) -> AgentState:
     start = time.perf_counter()
-    settings = get_settings()
 
     def _score_chunk(chunk: dict) -> float:
         vector = chunk.get("vector_score", 0)
@@ -132,7 +132,6 @@ def rerank_results(state: AgentState) -> AgentState:
 
 def generate_answer(state: AgentState) -> AgentState:
     start = time.perf_counter()
-    settings = get_settings()
 
     try:
         from app.services.llm import LLMService
@@ -172,13 +171,11 @@ def generate_answer(state: AgentState) -> AgentState:
 
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("llm", "completed", f"Generated {len(answer)} chars", duration_ms)
-        logger.info(f"LLM generated {len(answer)} chars in {duration_ms:.1f}ms")
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         state.error = str(exc)
         state.add_trace("llm", "error", str(exc), duration_ms)
-        logger.error(f"LLM generation failed: {exc}")
 
     return state
 
@@ -187,11 +184,11 @@ def _build_system_prompt(state: AgentState) -> str:
     settings = get_settings()
     base = (
         "You are DentalGPT, an expert dental AI assistant. You provide accurate, evidence-based "
-        "dental information grounded in the provided context. Always cite your sources. "
+        "dental information grounded in the provided context. Always cite your sources using [Source N] format. "
         "Never provide medical advice that replaces professional dental consultation. "
         "Include the medical disclaimer at the end of every response.\n\n"
+        f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
     )
-    base += f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
 
     if state.intent == "emergency":
         base += "IMPORTANT: This appears to be an emergency query. Emphasize seeking immediate professional dental care.\n\n"
@@ -221,31 +218,58 @@ def build_langgraph():
     workflow = StateGraph(AgentState)
 
     workflow.add_node("detect_intent", detect_intent)
+    workflow.add_node("generate_direct_answer", generate_direct_answer)
     workflow.add_node("rewrite_query", rewrite_query)
     workflow.add_node("retrieve_chunks", retrieve_chunks)
     workflow.add_node("retrieve_visuals", retrieve_visuals)
     workflow.add_node("rerank_results", rerank_results)
+    workflow.add_node("search_more", search_more)
     workflow.add_node("build_context", build_context)
     workflow.add_node("generate_answer", generate_answer)
     workflow.add_node("validate_citations", validate_citations)
+    workflow.add_node("respond_with_uncertainty", respond_with_uncertainty)
     workflow.add_node("format_response", format_response)
     workflow.add_node("handle_error", handle_error)
 
     workflow.set_entry_point("detect_intent")
-    workflow.add_edge("detect_intent", "rewrite_query")
+
+    workflow.add_conditional_edges(
+        "detect_intent",
+        can_answer_directly,
+        {
+            "yes": "generate_direct_answer",
+            "no": "rewrite_query",
+        },
+    )
+
+    workflow.add_edge("generate_direct_answer", "format_response")
+
     workflow.add_edge("rewrite_query", "retrieve_chunks")
     workflow.add_edge("retrieve_chunks", "retrieve_visuals")
     workflow.add_edge("retrieve_visuals", "rerank_results")
-    workflow.add_edge("rerank_results", "build_context")
+
+    workflow.add_conditional_edges(
+        "rerank_results",
+        has_enough_evidence,
+        {
+            "yes": "build_context",
+            "no": "search_more",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "search_more",
+        lambda state: "enough" if state.retrieved_chunks and state.retry_count <= state.max_retries else "uncertain",
+        {
+            "enough": "build_context",
+            "uncertain": "respond_with_uncertainty",
+        },
+    )
+
     workflow.add_edge("build_context", "generate_answer")
     workflow.add_edge("generate_answer", "validate_citations")
     workflow.add_edge("validate_citations", "format_response")
+    workflow.add_edge("respond_with_uncertainty", "format_response")
     workflow.add_edge("format_response", END)
-
-    workflow.add_conditional_edges(
-        "handle_error",
-        lambda state: "retry" if state.error and state.retry_count < state.max_retries else "end",
-        {"retry": "retrieve_chunks", "end": "format_response"},
-    )
 
     return workflow.compile()

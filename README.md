@@ -1,430 +1,867 @@
-# Dental AI Chatbot
+# Dental AI Chatbot - Production Deployment Guide
 
-Professional MVP for a Dental AI Retrieval-Augmented Generation chatbot. The app uses FastAPI, PostgreSQL, Qdrant, PDF ingestion, JWT authentication, role-based admin tools, chat history, source citations, and a professional React/Next.js frontend with light and dark themes.
+## Office PC Setup (RTX 5060Ti)
 
-Dental AI is educational clinical decision support. It does not replace diagnosis, treatment planning, emergency care, or judgment from a licensed dentist.
+---
 
-## Features
+## Table of Contents
 
-- Register and login with JWT authentication.
-- Roles: `admin`, `dentist`, `student`, and `patient`.
-- Admin PDF upload, document list, delete, re-ingest, ingestion progress, and ingestion logs.
-- Production-grade ingestion guardrails: PDF validation, file size checks, encrypted/empty PDF rejection, background processing, and optional OCR fallback.
-- PDF parsing with page numbers, chunk indexes, document metadata, and Qdrant point IDs.
-- Qdrant vector retrieval with configurable top-k, metadata filtering, hybrid keyword/vector retrieval, reranking, and context compression.
-- RAG answers grounded in retrieved dental context, with optional trusted web search only when the chat web-search toggle is enabled.
-- Trusted web search through Tavily, Brave, or Google Custom Search configuration, filtered to approved clinical domains.
-- Chat document upload for user-scoped PDF questions.
-- Voice input in the chat composer through browser microphone speech recognition.
-- Dataset Q&A generation from chunks with duplicate-skip logic and CSV export for expert review.
-- Citations include document name, page number, chunk index, and score.
-- Chat sessions, messages, document records, chunks, and feedback persisted in SQL.
-- PostgreSQL and Qdrant via Docker Compose.
-- React/Next.js frontend with separate pages for sign in, registration, chat, history, and admin document management.
-- ChatGPT-style chat workspace with persistent light/dark theme, source chips, feedback controls, attachment upload, voice input, and web-search toggle.
-- Pytest coverage for auth, chat history, feedback, admin upload, and ingestion metadata.
-- No hard-coded secrets. Use `.env`.
+1. [Prerequisites](#1-prerequisites)
+2. [System Requirements](#2-system-requirements)
+3. [Install Docker Desktop](#3-install-docker-desktop)
+4. [Install NVIDIA Container Toolkit](#4-install-nvidia-container-toolkit)
+5. [Install Ollama](#5-install-ollama)
+6. [Pull AI Models](#6-pull-ai-models)
+7. [Clone Repository](#7-clone-repository)
+8. [Configure Environment](#8-configure-environment)
+9. [Start All Services](#9-start-all-services)
+10. [Verify Installation](#10-verify-installation)
+11. [Access Services](#11-access-services)
+12. [Upload Dental Documents](#12-upload-dental-documents)
+13. [Configure Cloudflare Tunnel](#13-configure-cloudflare-tunnel)
+14. [GPU Optimization](#14-gpu-optimization)
+15. [Troubleshooting](#15-troubleshooting)
 
-## Architecture
+---
 
-```mermaid
-flowchart LR
-  UI["Next.js React UI"] --> API["FastAPI API"]
-  API --> PG["PostgreSQL: users, documents, chunks, chats, feedback"]
-  API --> RAG["RAG service"]
-  API --> ING["PDF ingestion service"]
-  ING --> PDF["Uploaded dental PDFs"]
-  ING --> QD["Qdrant vector store"]
-  RAG --> QD
-  RAG --> LLM["OpenAI, Ollama/Qwen, or extractive fallback"]
-  RAG --> WEB["Optional trusted web search"]
+## 1. Prerequisites
+
+### Hardware Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| GPU | RTX 3060 (12GB VRAM) | **RTX 5060Ti (16GB VRAM)** |
+| RAM | 16GB | 32GB+ |
+| Storage | 100GB free SSD | 500GB+ NVMe SSD |
+| CPU | 4 cores | 8+ cores |
+| Network | 10 Mbps | 100 Mbps+ |
+
+### Software Requirements
+
+- Windows 10/11 (64-bit)
+- Docker Desktop 4.x
+- NVIDIA GPU Drivers (latest)
+- Git
+- PowerShell 5.1+
+
+---
+
+## 2. System Requirements
+
+### Check Your GPU
+
+Open PowerShell and run:
+
+```powershell
+nvidia-smi
 ```
 
-## Quick Start With Docker
+Expected output should show:
+- GPU Name: NVIDIA GeForce RTX 5060Ti
+- VRAM: 16384 MiB
+- CUDA Version: 12.x
 
-1. Copy the environment template.
+### Check Docker
 
-```bash
-cp .env.example .env
+```powershell
+docker --version
+# Expected: Docker version 24.x or higher
+
+docker-compose --version
+# Expected: Docker Compose version 2.x or higher
 ```
 
-2. Edit `.env`.
+---
 
-Required for production-like use:
+## 3. Install Docker Desktop
 
-```bash
-JWT_SECRET_KEY=replace-with-a-long-random-secret
-OPENAI_API_KEY=your-openai-api-key
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3:14b
-OLLAMA_NUM_CTX=4096
-OLLAMA_TIMEOUT_SECONDS=300
-DATASET_LLM_PROVIDER=openai
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
+### Step 1: Download Docker Desktop
+
+1. Go to https://www.docker.com/products/docker-desktop/
+2. Click **"Download for Windows"**
+3. Run the installer `Docker Desktop Installer.exe`
+
+### Step 2: Install Docker Desktop
+
+1. Check **"Use WSL 2 instead of Hyper-V"** (recommended)
+2. Click **"OK"** and wait for installation
+3. Restart your computer when prompted
+
+### Step 3: Configure Docker Desktop
+
+1. Open Docker Desktop
+2. Go to **Settings** (gear icon)
+3. Go to **Resources** -> **WSL Integration
+4. Enable **"Enable integration with my default WSL distro"**
+5. Click **"Apply & Restart"**
+
+### Step 4: Verify Docker
+
+Open PowerShell:
+
+```powershell
+docker run hello-world
 ```
 
-If the backend runs inside Docker and Ollama runs on the host machine, use:
+Should output: "Hello from Docker!"
 
-```bash
-OLLAMA_BASE_URL=http://host.docker.internal:11434
+---
+
+## 4. Install NVIDIA Container Toolkit
+
+### Step 1: Install NVIDIA GPU Drivers
+
+1. Go to https://www.nvidia.com/Download/index.aspx
+2. Select:
+   - Product Type: GeForce
+   - Product Series: GeForce RTX 50 Series
+   - Product: GeForce RTX 5060Ti
+   - Operating System: Windows 11 64-bit
+3. Download and install the driver
+4. Restart your computer
+
+### Step 2: Install NVIDIA Container Toolkit
+
+Open PowerShell as Administrator:
+
+```powershell
+# Add NVIDIA package repository
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+# Or on Windows, download from:
+# https://github.com/NVIDIA/nvidia-docker/releases
+
+# Install using winget
+winget install NVIDIA.NVIDIAContainerToolkit
 ```
 
-For Docker Compose, use the container services:
+### Step 3: Configure Docker for GPU
 
-```bash
-DATABASE_URL=postgresql+psycopg://dental:dental_password@postgres:5432/dental_ai
+Create or edit `%USERPROFILE%\.docker\daemon.json`:
+
+```json
+{
+  "runtimes": {
+    "nvidia": {
+      "path": "nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  },
+  "default-runtime": "nvidia"
+}
+```
+
+### Step 4: Restart Docker
+
+```powershell
+# Restart Docker Desktop
+# Or run:
+docker restart
+```
+
+### Step 5: Verify GPU Access
+
+```powershell
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
+```
+
+Should show your RTX 5060Ti GPU info.
+
+---
+
+## 5. Install Ollama
+
+### Step 1: Download Ollama
+
+1. Go to https://ollama.com/download
+2. Click **"Download for Windows"**
+3. Run the installer
+
+### Step 2: Verify Ollama
+
+```powershell
+ollama --version
+# Expected: ollama version 0.3.x or higher
+```
+
+### Step 3: Start Ollama Service
+
+```powershell
+# Start Ollama service
+ollama serve
+
+# Or run in background
+Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+```
+
+### Step 4: Configure Ollama for GPU
+
+Set environment variable for GPU offloading:
+
+```powershell
+# Set GPU layers (for 16GB VRAM, use 35 layers)
+$env:OLLAMA_NUM_GPU_LAYERS=35
+
+# Or make it permanent:
+[Environment]::SetEnvironmentVariable("OLLAMA_NUM_GPU_LAYERS", "35", "User")
+```
+
+---
+
+## 6. Pull AI Models
+
+Open PowerShell and run:
+
+```powershell
+# Pull the text model (Qwen3:14b) - ~9GB download
+ollama pull qwen3:14b
+
+# Pull the vision model (Qwen2.5-VL:7b) - ~4GB download
+ollama pull qwen2.5vl:7b
+
+# Verify models are installed
+ollama list
+```
+
+Expected output:
+```
+NAME              SIZE      MODIFIED
+qwen3:14b         9.0 GB    5 minutes ago
+qwen2.5vl:7b      4.4 GB    2 minutes ago
+```
+
+### Test Models
+
+```powershell
+# Test text model
+ollama run qwen3:14b "What is dental caries?"
+
+# Test vision model (basic test)
+ollama run qwen2.5vl:7b "Describe what you see" --image test.jpg
+```
+
+---
+
+## 7. Clone Repository
+
+```powershell
+# Navigate to your project directory
+cd C:\Users\HP\OneDrive\Desktop
+
+# Clone the repository
+git clone https://github.com/Hamadullah09/Dental_AI_Chatbot.git
+
+# Enter the directory
+cd Dental_AI_Chatbot\Dental_AI_Chatbot
+```
+
+---
+
+## 8. Configure Environment
+
+### Step 1: Copy Environment File
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### Step 2: Edit Environment File
+
+Open `.env` in your editor (VS Code recommended):
+
+```powershell
+code .env
+```
+
+### Step 3: Configure Critical Values
+
+**Generate a secure JWT secret:**
+
+```powershell
+# Generate a random secret
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+# Copy the output
+```
+
+**Update these values in `.env`:**
+
+```env
+# === SECURITY (CRITICAL) ===
+JWT_SECRET_KEY=paste-your-generated-secret-here
+ADMIN_EMAIL=admin@yourclinic.com
+ADMIN_PASSWORD=your-strong-password-here
+POSTGRES_PASSWORD=your-strong-postgres-password
+
+# === DATABASE ===
+DATABASE_URL=postgresql+psycopg://dental:your-strong-postgres-password@postgres:5432/dental_ai
+
+# === REDIS ===
+REDIS_URL=redis://redis:6379/0
+
+# === QDRANT ===
 QDRANT_URL=http://qdrant:6333
-QDRANT_LOCAL_PATH=
-```
+QDRANT_COLLECTION=dental_docs_clean
 
-`JWT_SECRET_KEY` is not provided by OpenAI, Qdrant, or PostgreSQL. It is your own private random signing secret used by the backend to create and verify login tokens. Generate one locally:
+# === OLLAMA (GPU Server) ===
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3:14b
+OLLAMA_VISION_MODEL=qwen2.5vl:7b
+LLM_PROVIDER=ollama
 
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+# === EMBEDDING ===
+EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
 
-Keep this value only in `.env`. Never commit it to GitHub.
-
-For local demos, the app still runs without `OPENAI_API_KEY`; it returns an extractive answer from the top retrieved chunk.
-
-Set the frontend chat timeout to match your model speed:
-
-```bash
-NEXT_PUBLIC_BACKEND_HEALTH_TIMEOUT_MS=1500
-NEXT_PUBLIC_CHAT_GENERATION_TIMEOUT_MS=300000
-```
-
-The app sends a single grounded chat request to `/api/chat`; there is no OpenAI backup route in the main flow. If the backend is healthy but the model is slow, the longer request timeout gives Qwen more time to finish before the UI shows a failure.
-
-Optional trusted web search:
-
-```bash
-WEB_SEARCH_PROVIDER=tavily
-TAVILY_API_KEY=your-tavily-api-key
-WEB_SEARCH_TRUSTED_DOMAINS=who.int,cdc.gov,nih.gov,ncbi.nlm.nih.gov,nhs.uk,ada.org,nice.org.uk,fda.gov
-```
-
-Web search does not run automatically. The chat UI sends online search requests only when the user enables the web-search toggle. With the toggle off, the chatbot uses local uploaded/PDF knowledge only and says when it does not have enough evidence.
-
-Optional RAG quality modes:
-
-```bash
+# === RAG SETTINGS ===
 RAG_MODE=simple
-ALLOW_GENERAL_FALLBACK=true
+RETRIEVAL_TOP_K=5
+ENABLE_KEYWORD_SEARCH=true
 ENABLE_MEMORY=true
 ENABLE_QUERY_REWRITING=true
 ENABLE_ADJACENT_CHUNK_EXPANSION=true
-ENABLE_HYDE=false
-ENABLE_SELF_CHECK=false
-ENABLE_BGE_RERANKER=false
-BGE_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 ENABLE_MULTIMODAL_RAG=true
-EXTRACTED_VISUALS_DIR=uploads/extracted_visuals
-VISUAL_MIN_RELEVANCE_SCORE=0.95
-RETRIEVAL_MIN_RELEVANCE_SCORE=1.1
-MULTI_QUERY_MAX_VARIANTS=4
-OLLAMA_TOP_P=0.8
+
+# === RATE LIMITING ===
+RATE_LIMIT_REQUESTS_PER_MINUTE=60
+RATE_LIMIT_CHAT_PER_MINUTE=20
+RATE_LIMIT_AUTH_PER_MINUTE=10
+
+# === STREAMING ===
+STREAMING_ENABLED=true
+
+# === LOGGING ===
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+
+# === MONITORING ===
+PROMETHEUS_ENABLED=true
+GRAFANA_PASSWORD=admin
 ```
 
-Supported `RAG_MODE` values are `simple`, `memory`, `multi_query`, `hyde`, `adaptive`, `corrective`, `self_rag`, and `agentic`. The app still starts in stable simple mode by default, with clean chunk filtering, query rewriting, relevance scoring, strict Qwen prompting, adjacent chunk expansion, multimodal visual retrieval, and clearly labeled fallback answers. BGE reranking is optional and only runs when `ENABLE_BGE_RERANKER=true` and the reranker model is available. See `docs/RAG_EVOLUTION_ROADMAP.md` and `docs/MULTIMODAL_RAG.md` for the staged RAG upgrade notes.
+### Step 4: Save and Close
 
-3. Start the stack.
+Save the `.env` file.
 
-```bash
-docker compose up --build
+---
+
+## 9. Start All Services
+
+### Step 1: Start Docker Desktop
+
+Make sure Docker Desktop is running (check system tray).
+
+### Step 2: Start All Services
+
+```powershell
+# Navigate to project directory
+cd C:\Users\HP\OneDrive\Desktop\Dental_AI_chatbot\Dental_AI_Chatbot
+
+# Start all services
+docker-compose up -d
 ```
 
-4. Open the app.
+This will start 8 services:
+- **api** - FastAPI backend (port 8000)
+- **frontend** - Next.js frontend (port 3000)
+- **postgres** - PostgreSQL database (port 5432)
+- **qdrant** - Vector database (port 6333)
+- **redis** - Cache and session store (port 6379)
+- **nginx** - Reverse proxy (port 80)
+- **prometheus** - Metrics collection (port 9090)
+- **grafana** - Monitoring dashboards (port 3001)
 
-```text
+### Step 3: Wait for Services
+
+```powershell
+# Watch service status
+docker-compose ps
+
+# Watch logs
+docker-compose logs -f
+
+# Watch specific service
+docker-compose logs -f api
+```
+
+### Step 4: Verify All Services Are Healthy
+
+```powershell
+# Check all services
+docker-compose ps
+
+# Expected output should show "healthy" for all services
+```
+
+---
+
+## 10. Verify Installation
+
+### Step 1: Check Health Endpoint
+
+Open browser or use curl:
+
+```
+http://localhost:8000/api/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "service": "Dental AI Chatbot",
+  "environment": "development",
+  "checks": {
+    "database": {"status": "ok"},
+    "qdrant": {"status": "ok"},
+    "ollama": {"status": "ok"},
+    "redis": {"status": "ok"}
+  }
+}
+```
+
+### Step 2: Check Frontend
+
+Open browser:
+```
 http://localhost:3000
 ```
 
-5. Sign in as the configured admin.
+Should show the login page.
 
-Admin users are not created through public registration. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`; the backend seeds that admin account into the database on startup.
+### Step 3: Check API Docs
 
-The FastAPI backend is still available at:
-
-```text
-http://localhost:8000
+Open browser:
+```
+http://localhost:8000/docs
 ```
 
-## Local Development Setup
+Should show Swagger UI.
 
-Run the backend on macOS/Linux:
+### Step 4: Check Grafana
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
+Open browser:
+```
+http://localhost:3001
 ```
 
-Run the backend on Windows with the existing local environment:
+Login:
+- Username: `admin`
+- Password: `admin` (or your GRAFANA_PASSWORD)
+
+---
+
+## 11. Access Services
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Frontend | http://localhost:3000 | Chat UI |
+| API | http://localhost:8000 | Backend API |
+| API Docs | http://localhost:8000/docs | Swagger UI |
+| Grafana | http://localhost:3001 | Monitoring |
+| Prometheus | http://localhost:9090 | Metrics |
+| Qdrant | http://localhost:6333 | Vector DB UI |
+
+### Create Admin Account
+
+The admin account is auto-created from your `.env` settings.
+
+### Create User Accounts
+
+1. Open http://localhost:3000/register
+2. Register as Patient or Student
+3. Login with your credentials
+
+---
+
+## 12. Upload Dental Documents
+
+### Step 1: Login as Admin
+
+1. Go to http://localhost:3000/login
+2. Login with admin credentials from `.env`
+
+### Step 2: Navigate to Admin Panel
+
+1. Click the sidebar menu
+2. Click **"Admin workspace"**
+
+### Step 3: Upload PDFs
+
+1. Click **"Upload Document"**
+2. Select PDF files (textbooks, guidelines, research articles)
+3. Fill in metadata:
+   - Title
+   - Author
+   - Year
+   - Document Type (textbook, guideline, research_article)
+   - Trust Level (high, medium, low)
+   - Dental Specialty
+4. Click **"Upload"**
+
+### Step 4: Wait for Ingestion
+
+- Watch the progress bar
+- Ingestion includes: OCR, chunking, embedding, vector indexing
+- Time varies by document size (5-30 minutes for large PDFs)
+
+### Step 5: Start Chatting
+
+1. Go to http://localhost:3000/chat
+2. Ask dental questions
+3. Get AI-powered answers with citations
+
+---
+
+## 13. Configure Cloudflare Tunnel
+
+### Step 1: Install Cloudflare Tunnel
 
 ```powershell
-.\.run_venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8002
+# Download cloudflared
+Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "tools\cloudflared.exe"
 ```
 
-For local non-Docker development, set:
-
-```bash
-DATABASE_URL=sqlite:///./dental_ai.db
-QDRANT_URL=
-QDRANT_LOCAL_PATH=qdrant_storage
-MAX_UPLOAD_MB=200
-EMBEDDING_BATCH_SIZE=64
-VECTOR_UPSERT_BATCH_SIZE=128
-```
-
-### Fast Local Qdrant Server Mode
-
-Local file-mode Qdrant (`QDRANT_LOCAL_PATH=qdrant_storage`) is convenient for small demos, but it becomes very slow once the collection grows past roughly 20,000 points. For retrieval tuning and the 200-question benchmark, run Qdrant as a Docker server and point the backend to HTTP Qdrant instead.
-
-Start Qdrant only:
+### Step 2: Login to Cloudflare
 
 ```powershell
-.\scripts\start_qdrant_docker.ps1
+tools\cloudflared.exe tunnel login
 ```
 
-Migrate the clean reviewed corpus into the Docker Qdrant server without overwriting the old local collection:
+This opens a browser. Select your domain.
+
+### Step 3: Create Tunnel
 
 ```powershell
-.\scripts\migrate_clean_qdrant_to_docker.ps1 -ReplaceTarget
+tools\cloudflared.exe tunnel create dental-ai-chatbot
 ```
 
-Then set the backend environment to use the server collection:
+Copy the tunnel ID from output.
 
-```bash
-QDRANT_URL=http://127.0.0.1:6333
-QDRANT_LOCAL_PATH=
-QDRANT_COLLECTION=dental_docs_clean
+### Step 4: Configure Tunnel
+
+Create `C:\Users\HP\.cloudflared\config.yml`:
+
+```yaml
+tunnel: your-tunnel-id
+credentials-file: C:\Users\HP\.cloudflared\your-tunnel-id.json
+
+ingress:
+  - hostname: api.yourdomain.com
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: true
+  - hostname: www.yourdomain.com
+    service: http://localhost:3000
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
 ```
 
-The migration script rebuilds `dental_docs_clean` from SQL `documents`, `document_chunks`, and `document_visuals`, keeping only reviewed/high or medium trust records, clean text chunks, and indexed visuals. The old local `dental_docs` collection remains untouched.
-
-For scanned/image-only PDFs, install OCR system tools and configure paths when Windows cannot find them automatically:
-
-```bash
-OCR_DPI=250
-OCR_LANGUAGE=eng
-OCR_CONFIG=--psm 6
-TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
-POPPLER_PATH=C:\poppler\Library\bin
-```
-
-`TESSERACT_CMD` should point to `tesseract.exe`; `POPPLER_PATH` should point to the folder containing Poppler tools such as `pdftoppm.exe`.
-
-Run the frontend in another terminal on Windows:
+### Step 5: Route DNS
 
 ```powershell
-cd frontend
-npm install
-$env:NEXT_PUBLIC_API_URL="http://127.0.0.1:8002"
-npm run dev -- -p 3001
+tools\cloudflared.exe tunnel route dns dental-ai-chatbot api.yourdomain.com
+tools\cloudflared.exe tunnel route dns dental-ai-chatbot www.yourdomain.com
 ```
 
-Then open:
-
-```text
-http://127.0.0.1:3001
-```
-
-If port `8002` is already in use on Windows, stop the old backend process first:
+### Step 6: Run Tunnel
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8002 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+tools\cloudflared.exe tunnel run dental-ai-chatbot
 ```
 
-## Offline Ingestion
+### Step 7: Update CORS
 
-Place PDFs in `knowledge_base/`, make sure Qdrant is running, then run:
+Update `.env`:
 
-```bash
-python ingest.py
+```env
+CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com,http://localhost:3000
 ```
 
-The script stores document and chunk metadata in SQL and vectors in Qdrant. Each vector payload includes:
+Restart services:
 
-- `text`
-- `chunk_id`
-- `document_id`
-- `document_name`
-- `canonical_document_title`
-- `book_title`
-- `author`
-- `author_or_source`
-- `publisher`
-- `year`
-- `edition`
-- `document_type`
-- `trust_level`
-- `review_status`
-- `specialty`
-- `dental_specialty`
-- `topic`
-- `difficulty_level`
-- `language`
-- `file_hash`
-- `content_hash`
-- `section_title`
-- `chapter_title`
-- `quality_score`
-- `is_noisy`
-- `noise_reasons`
-- `source`
-- `page_number`
-- `chunk_index`
-
-When `ENABLE_MULTIMODAL_RAG=true`, PDF ingestion also extracts page snapshots, embedded images, figure regions, and tables into `uploads/extracted_visuals/{document_id}/`, stores metadata in `document_visuals`, and indexes visual captions/descriptions in Qdrant with `payload_type="visual"`. If a scanned PDF has no extractable text, the pipeline now keeps going with visual-only indexing instead of failing immediately.
-
-Visual maintenance scripts:
-
-```bash
-python scripts/extract_pdf_visuals.py
-python scripts/rebuild_visual_index.py
+```powershell
+docker-compose down
+docker-compose up -d
 ```
 
-## Dataset Q&A Generation
+---
 
-The admin workflow can generate Q&A rows from ingested chunks using the configured dataset provider. For paid OpenAI generation, set:
+## 14. GPU Optimization
 
-```bash
-DATASET_LLM_PROVIDER=openai
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_MODEL_FALLBACKS=gpt-4.1-mini,gpt-4o-mini,gpt-3.5-turbo
+### RTX 5060Ti (16GB VRAM) Optimal Settings
+
+Update `.env`:
+
+```env
+# === GPU OPTIMIZATION ===
+OLLAMA_NUM_CTX=8192
+OLLAMA_NUM_PREDICT=1024
+OLLAMA_TOP_P=0.85
+OLLAMA_KEEP_ALIVE=30m
+
+# === EMBEDDING BATCH SIZE ===
+EMBEDDING_BATCH_SIZE=128
+VECTOR_UPSERT_BATCH_SIZE=256
 ```
 
-Already-generated chunks are skipped so repeated clicks do not duplicate rows. The admin UI can download the expert-review file as `Database Q&A.csv`.
+### Monitor GPU Usage
 
-## RAG Quality Evaluation
+```powershell
+# Real-time GPU monitoring
+nvidia-smi -l 1
 
-Phase 2 includes a lightweight evaluation harness for retrieval and answer quality. Add or edit JSONL cases in:
-
-```text
-docs/evaluation_dataset.jsonl
+# Or in PowerShell
+while ($true) { nvidia-smi; Start-Sleep 2; Clear-Host }
 ```
 
-Each case can define:
+### GPU Memory Management
 
-- `question`
-- `expected_terms`
-- `expected_sources`
-- `filters`
+If Ollama uses too much VRAM:
 
-Run:
+```powershell
+# Set GPU layers (35 layers for 16GB VRAM)
+$env:OLLAMA_NUM_GPU_LAYERS=35
 
-```bash
-python scripts/evaluate_rag.py --dataset docs/evaluation_dataset.jsonl
+# Or reduce context window
+# In .env: OLLAMA_NUM_CTX=4096
 ```
 
-To generate a larger retrieval benchmark from retained chunks:
+### Multi-Model GPU Sharing
 
-```bash
-python scripts/build_retrieval_benchmark.py --output docs/retrieval_benchmark_200.jsonl --limit 200 --text-count 110 --visual-count 50 --table-count 20 --negative-count 20
-python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --json
+For running both text and vision models:
+
+```env
+# Text model uses ~9GB VRAM
+OLLAMA_MODEL=qwen3:14b
+
+# Vision model uses ~4GB VRAM
+OLLAMA_VISION_MODEL=qwen2.5vl:7b
+
+# Total: ~13GB VRAM (fits in 16GB)
 ```
 
-For machine-readable output:
+---
 
-```bash
-python scripts/evaluate_rag.py --json
+## 15. Troubleshooting
+
+### Common Issues
+
+#### 1. Docker Fails to Start
+
+```powershell
+# Check WSL2 is installed
+wsl --status
+
+# If not installed:
+wsl --install
+
+# Restart Docker Desktop
 ```
 
-For fast smoke tuning, filter by case type:
+#### 2. GPU Not Detected
 
-```bash
-python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type text --max-cases 20 --json
-python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type visual --max-cases 10 --json
-python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type table_chart --max-cases 10 --json
-python scripts/evaluate_rag.py --dataset docs/retrieval_benchmark_200.jsonl --collection dental_docs_clean --retrieval-only --case-type negative_no_visual --max-cases 10 --json
+```powershell
+# Check NVIDIA driver
+nvidia-smi
+
+# If not working, reinstall driver from nvidia.com
+
+# Check Docker GPU support
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 ```
 
-The generated benchmark is categorized into text retrieval, visual retrieval, table/chart retrieval, and negative no-visual cases. The evaluator reports pass rate, expected-term recall, top-5 relevance, citation accuracy, visual relevance, and answer faithfulness. Failed cases are written to `cleanup_reports/retrieval_benchmark_failures.jsonl` with query rewrites, top retrieved chunks, reranker/BM25/vector scores, selected visuals, and final citations. Use this after uploading approved dental PDFs to compare retrieval changes.
+#### 3. Ollama Model Not Found
 
-## API Overview
+```powershell
+# Check models
+ollama list
 
-Auth:
+# Pull missing model
+ollama pull qwen3:14b
+ollama pull qwen2.5vl:7b
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-
-Chat:
-
-- `POST /api/chat`
-- `GET /api/chat/sessions`
-- `POST /api/chat/documents`
-- `GET /api/chat/documents/{document_id}`
-- `POST /api/feedback`
-
-Admin:
-
-- `GET /api/admin/documents`
-- `POST /api/admin/documents`
-- `POST /api/admin/documents/{document_id}/reingest`
-- `DELETE /api/admin/documents/{document_id}`
-- `GET /api/admin/documents/{document_id}/logs`
-- `POST /api/admin/dataset/generate`
-- `GET /api/admin/dataset/download`
-
-Health:
-
-- `GET /api/health`
-- `GET /api/disclaimer`
-
-## Data Model
-
-- `users`: account, password hash, role, active state.
-- `documents`: uploaded PDFs and ingestion status.
-- `document_chunks`: chunk text, page number, chunk index, Qdrant point ID.
-- `chat_sessions`: user-owned conversations.
-- `messages`: user and assistant turns, assistant citations as JSON.
-- `feedback`: rating and optional comments for assistant messages.
-
-## Tests
-
-```bash
-pytest
+# Restart Ollama
+ollama serve
 ```
 
-Tests mock external RAG and ingestion calls where needed, so they do not require OpenAI or Qdrant.
+#### 4. Port Already in Use
 
-## Security Notes
+```powershell
+# Find process using port
+netstat -ano | findstr :8000
 
-- Never commit `.env`.
-- `JWT_SECRET_KEY` must be long and random outside local demos.
-- Passwords are stored with bcrypt hashing.
-- Admin-only routes enforce role checks.
-- Disable `ALLOW_ADMIN_REGISTRATION` after bootstrap.
-- Do not expose admin registration in the public UI. Use `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to seed the admin account.
-- This MVP is not HIPAA-ready. Add compliance controls before handling real patient data.
-
-## Project Structure
-
-```text
-app/
-  core/          configuration, database, security
-  routers/       auth, chat, admin, health APIs
-  services/      RAG, ingestion, upload storage, dataset generation, web search
-  main.py        FastAPI application
-frontend/        React/Next.js frontend
-static/          legacy FastAPI-served fallback page
-tests/           pytest suite
-knowledge_base/  optional offline PDFs
-uploaded_docs/   runtime admin uploads
-docs/            developer notes and roadmap
+# Kill process
+taskkill /PID <PID> /F
 ```
 
-## Remaining Roadmap
+#### 5. Database Connection Failed
 
-- Alembic migrations instead of `create_all`.
-- Rate limiting and stronger audit log retention.
-- Larger expert-reviewed evaluation dataset for dental factuality and citation quality.
-- PHI redaction, consent flows, retention policies, and deployment hardening.
-- Streaming chat responses.
-- Multi-tenant clinic support.
+```powershell
+# Check PostgreSQL container
+docker-compose logs postgres
+
+# Restart PostgreSQL
+docker-compose restart postgres
+```
+
+#### 6. Redis Connection Failed
+
+```powershell
+# Check Redis container
+docker-compose logs redis
+
+# Restart Redis
+docker-compose restart redis
+```
+
+#### 7. Out of GPU Memory
+
+```powershell
+# Check GPU memory
+nvidia-smi
+
+# Kill Ollama process
+taskkill /F /IM ollama.exe
+
+# Restart Ollama with fewer layers
+$env:OLLAMA_NUM_GPU_LAYERS=25
+ollama serve
+```
+
+#### 8. Slow Responses
+
+```powershell
+# Check Ollama is using GPU
+nvidia-smi
+
+# Should show ollama process using GPU memory
+
+# If using CPU only, check:
+$env:CUDA_VISIBLE_DEVICES=0
+```
+
+### Reset Everything
+
+```powershell
+# Stop all services
+docker-compose down
+
+# Remove volumes
+docker-compose down -v
+
+# Remove images
+docker-compose down --rmi all
+
+# Start fresh
+docker-compose up -d --build
+```
+
+### View Logs
+
+```powershell
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f api
+docker-compose logs -f frontend
+docker-compose logs -f postgres
+docker-compose logs -f qdrant
+docker-compose logs -f redis
+```
+
+---
+
+## Quick Start Commands
+
+```powershell
+# 1. Navigate to project
+cd C:\Users\HP\OneDrive\Desktop\Dental_AI_chatbot\Dental_AI_Chatbot
+
+# 2. Start everything
+docker-compose up -d
+
+# 3. Wait 2 minutes for services to start
+
+# 4. Open browser
+start http://localhost:3000
+
+# 5. Login and start chatting!
+```
+
+---
+
+## Architecture
+
+```
+Internet
+    │
+    ▼
+Cloudflare CDN
+    │
+    ▼
+Nginx Reverse Proxy (port 80)
+    │
+    ├──► Frontend (Next.js, port 3000)
+    │
+    └──► Backend API (FastAPI, port 8000)
+              │
+              ├──► Redis (Cache, port 6379)
+              ├──► PostgreSQL (Database, port 5432)
+              ├──► Qdrant (Vectors, port 6333)
+              ├──► Prometheus (Metrics, port 9090)
+              └──► Grafana (Dashboards, port 3001)
+                          │
+                          ▼
+                    LangGraph Agent
+                          │
+              ┌───────────┼───────────┐
+              ▼           ▼           ▼
+         Retrieval    Visual    Citation
+              │           │           │
+              └─────┬─────┴───────────┘
+                    ▼
+              Hybrid Retrieval
+              ┌─────┴─────┐
+              ▼           ▼
+         Qdrant Text  Qdrant Visual
+              │           │
+              └─────┬─────┘
+                    ▼
+              Context Builder
+                    ▼
+              Office GPU Server (RTX 5060Ti)
+                    ▼
+              Ollama (Qwen3:14b + Qwen2.5-VL:7b)
+                    ▼
+              Final Response
+```
+
+---
+
+## Performance Benchmarks
+
+| Metric | Target | Expected (RTX 5060Ti) |
+|--------|--------|----------------------|
+| Text Generation | < 5s | 2-4s |
+| Vision Analysis | < 10s | 5-8s |
+| RAG Retrieval | < 500ms | 200-400ms |
+| Embedding | < 100ms | 30-80ms |
+| API Response | < 200ms | 50-150ms |
+| Concurrent Users | 50+ | 100+ |
+
+---
+
+## Support
+
+For issues or questions:
+
+1. Check [Troubleshooting](#15-troubleshooting) section
+2. Check GitHub Issues: https://github.com/Hamadullah09/Dental_AI_Chatbot/issues
+3. Contact: your-email@domain.com
+
+---
+
+## License
+
+MIT License - See LICENSE file for details.

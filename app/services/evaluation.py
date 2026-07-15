@@ -1,179 +1,107 @@
+from __future__ import annotations
+
 import json
-from dataclasses import dataclass
-from pathlib import Path
+import time
 from typing import Any
 
-from app.services.rag import RAGService
+from app.core.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
-@dataclass
-class EvaluationCase:
-    question: str
-    expected_terms: list[str]
-    expected_sources: list[str]
-    case_type: str = "text"
-    expect_visual: bool = False
-    expected_document_id: str | None = None
-    expected_chunk_id: str | None = None
-    expected_chunk_index: int | None = None
-    expected_visual_id: str | None = None
-    expected_page_number: int | None = None
-    filters: dict[str, Any] | None = None
+class EvaluationPipeline:
+    def __init__(self) -> None:
+        self.settings = get_settings()
 
+    def evaluate(self, question: str, answer: str, sources: list[dict], context: str, visuals: list[dict] | None = None) -> dict[str, Any]:
+        start = time.perf_counter()
 
-@dataclass
-class EvaluationResult:
-    question: str
-    answer: str
-    passed: bool
-    term_recall: float
-    has_citation: bool
-    source_match: bool
-    top5_relevance: bool
-    citation_accuracy: bool
-    visual_relevance: bool
-    answer_faithfulness: bool
-    missing_terms: list[str]
-    sources: list[str]
-    visuals: list[str]
-    case_type: str = "text"
-
-
-def load_evaluation_cases(path: Path) -> list[EvaluationCase]:
-    cases: list[EvaluationCase] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip() or line.strip().startswith("#"):
-            continue
-        payload = json.loads(line)
-        question = str(payload.get("question") or "").strip()
-        if not question:
-            raise ValueError(f"Evaluation case on line {line_number} is missing question.")
-        cases.append(
-            EvaluationCase(
-                question=question,
-                expected_terms=[str(term).lower() for term in payload.get("expected_terms", [])],
-                expected_sources=[str(source).lower() for source in payload.get("expected_sources", [])],
-                case_type=str(payload.get("case_type") or "text"),
-                expect_visual=bool(payload.get("expect_visual", False)),
-                expected_document_id=payload.get("expected_document_id"),
-                expected_chunk_id=payload.get("expected_chunk_id"),
-                expected_chunk_index=payload.get("expected_chunk_index"),
-                expected_visual_id=payload.get("expected_visual_id"),
-                expected_page_number=payload.get("expected_page_number"),
-                filters=payload.get("filters"),
-            )
-        )
-    return cases
-
-
-def evaluate_cases(service: RAGService, cases: list[EvaluationCase], top_k: int = 5) -> list[EvaluationResult]:
-    results: list[EvaluationResult] = []
-    for case in cases:
-        rag_result = service.answer(case.question, top_k=top_k, filters=case.filters)
-        if isinstance(rag_result, tuple):
-            answer, citations = rag_result
-            visuals = []
-        else:
-            answer = rag_result.answer
-            citations = rag_result.sources
-            visuals = rag_result.visuals or []
-        answer_l = answer.lower()
-        missing_terms = [term for term in case.expected_terms if term not in answer_l]
-        term_recall = 1.0 if not case.expected_terms else (len(case.expected_terms) - len(missing_terms)) / len(case.expected_terms)
-        source_names = [citation.document_name for citation in citations]
-        source_names_l = [name.lower() for name in source_names]
-        source_match = not case.expected_sources or any(
-            expected in source_name
-            for expected in case.expected_sources
-            for source_name in source_names_l
-        )
-        has_citation = any(citation.page_number is not None for citation in citations)
-        top5_relevance = (
-            case.expected_chunk_index is None
-            or any(citation.chunk_index == case.expected_chunk_index for citation in citations[:5])
-        )
-        citation_accuracy = (
-            not case.expected_document_id
-            or any(str(citation.document_id) == str(case.expected_document_id) for citation in citations)
-        ) and (
-            case.expected_page_number is None
-            or any(citation.page_number == case.expected_page_number for citation in citations)
-        )
-        visual_ids = [visual.visual_id for visual in visuals]
-        visual_relevance = (
-            any(str(visual.visual_id) == str(case.expected_visual_id) for visual in visuals)
-            if case.expect_visual and case.expected_visual_id
-            else (bool(visuals) if case.expect_visual else not bool(visuals))
-        )
-        answer_faithfulness = term_recall >= 0.6 and not any(
-            phrase in answer_l
-            for phrase in [
-                "as an ai",
-                "i cannot access",
-                "according to unknown",
-                "source:",
-            ]
-        )
-        passed = term_recall >= 0.8 and has_citation and source_match and citation_accuracy and visual_relevance and answer_faithfulness
-        results.append(
-            EvaluationResult(
-                question=case.question,
-                answer=answer,
-                passed=passed,
-                term_recall=term_recall,
-                has_citation=has_citation,
-                source_match=source_match,
-                top5_relevance=top5_relevance,
-                citation_accuracy=citation_accuracy,
-                visual_relevance=visual_relevance,
-                answer_faithfulness=answer_faithfulness,
-                missing_terms=missing_terms,
-                sources=source_names,
-                visuals=visual_ids,
-                case_type=case.case_type,
-            )
-        )
-    return results
-
-
-def summarize_results(results: list[EvaluationResult]) -> dict[str, Any]:
-    total = len(results)
-    passed = sum(1 for result in results if result.passed)
-    average_recall = sum(result.term_recall for result in results) / total if total else 0.0
-    citation_rate = sum(1 for result in results if result.has_citation) / total if total else 0.0
-    source_match_rate = sum(1 for result in results if result.source_match) / total if total else 0.0
-    citation_accuracy = sum(1 for result in results if result.citation_accuracy) / total if total else 0.0
-    visual_relevance = sum(1 for result in results if result.visual_relevance) / total if total else 0.0
-    answer_faithfulness = sum(1 for result in results if result.answer_faithfulness) / total if total else 0.0
-    top5_relevance = sum(1 for result in results if result.top5_relevance) / total if total else 0.0
-    return {
-        "total": total,
-        "passed": passed,
-        "failed": total - passed,
-        "pass_rate": round(passed / total, 3) if total else 0.0,
-        "average_term_recall": round(average_recall, 3),
-        "citation_rate": round(citation_rate, 3),
-        "source_match_rate": round(source_match_rate, 3),
-        "citation_accuracy": round(citation_accuracy, 3),
-        "visual_relevance": round(visual_relevance, 3),
-        "answer_faithfulness": round(answer_faithfulness, 3),
-        "top5_relevance": round(top5_relevance, 3),
-        "by_case_type": summarize_by_case_type(results),
-    }
-
-
-def summarize_by_case_type(results: list[EvaluationResult]) -> dict[str, Any]:
-    grouped: dict[str, list[EvaluationResult]] = {}
-    for result in results:
-        grouped.setdefault(result.case_type, []).append(result)
-    summary: dict[str, Any] = {}
-    for case_type, items in grouped.items():
-        total = len(items)
-        summary[case_type] = {
-            "total": total,
-            "pass_rate": round(sum(1 for item in items if item.passed) / total, 3) if total else 0.0,
-            "citation_accuracy": round(sum(1 for item in items if item.citation_accuracy) / total, 3) if total else 0.0,
-            "visual_relevance": round(sum(1 for item in items if item.visual_relevance) / total, 3) if total else 0.0,
-            "faithfulness": round(sum(1 for item in items if item.answer_faithfulness) / total, 3) if total else 0.0,
+        results = {
+            "faithfulness": self._check_faithfulness(answer, context),
+            "groundedness": self._check_groundedness(answer, context),
+            "citation_accuracy": self._check_citation_accuracy(answer, sources, context),
+            "visual_accuracy": self._check_visual_accuracy(answer, visuals or []),
+            "hallucination_rate": self._check_hallucination(answer, context),
+            "relevance": self._check_relevance(question, answer),
         }
-    return summary
+
+        results["overall_score"] = sum(results.values()) / len(results)
+        results["latency_ms"] = (time.perf_counter() - start) * 1000
+
+        return results
+
+    def _check_faithfulness(self, answer: str, context: str) -> float:
+        if not context:
+            return 0.5
+        answer_words = set(answer.lower().split())
+        context_words = set(context.lower().split())
+        overlap = len(answer_words & context_words)
+        total = len(answer_words) if answer_words else 1
+        return min(1.0, overlap / total)
+
+    def _check_groundedness(self, answer: str, context: str) -> float:
+        if not context:
+            return 0.5
+        sentences = [s.strip() for s in answer.split(".") if s.strip()]
+        grounded_count = 0
+        for sentence in sentences:
+            sentence_words = set(sentence.lower().split())
+            context_words = set(context.lower().split())
+            if len(sentence_words & context_words) >= len(sentence_words) * 0.3:
+                grounded_count += 1
+        return grounded_count / max(len(sentences), 1)
+
+    def _check_citation_accuracy(self, answer: str, sources: list[dict], context: str) -> float:
+        import re
+        citations = re.findall(r'\[Source \d+\]', answer)
+        if not citations:
+            return 1.0 if not sources else 0.5
+        return min(1.0, len(sources) / max(len(citations), 1))
+
+    def _check_visual_accuracy(self, answer: str, visuals: list[dict]) -> float:
+        if not visuals:
+            return 1.0
+        visual_references = sum(1 for v in visuals if v.get("document_name", "").lower() in answer.lower())
+        return min(1.0, visual_references / max(len(visuals), 1))
+
+    def _check_hallucination(self, answer: str, context: str) -> float:
+        if not context:
+            return 0.5
+        answer_words = set(answer.lower().split())
+        context_words = set(context.lower().split())
+        novel_words = answer_words - context_words
+        novel_words = {w for w in novel_words if len(w) > 4}
+        return 1.0 - min(1.0, len(novel_words) / max(len(answer_words), 1))
+
+    def _check_relevance(self, question: str, answer: str) -> float:
+        q_words = set(question.lower().split())
+        a_words = set(answer.lower().split())
+        overlap = len(q_words & a_words)
+        return min(1.0, overlap / max(len(q_words), 1))
+
+    def compute_ranking_metrics(self, ranked_items: list[dict], relevant_ids: list[str], k: int = 10) -> dict[str, float]:
+        metrics = {}
+
+        hits = sum(1 for i, item in enumerate(ranked_items[:k]) if item.get("id") in relevant_ids)
+        metrics["precision@k"] = hits / k if k > 0 else 0.0
+        metrics["recall@k"] = hits / len(relevant_ids) if relevant_ids else 0.0
+
+        mrr = 0.0
+        for i, item in enumerate(ranked_items):
+            if item.get("id") in relevant_ids:
+                mrr = 1.0 / (i + 1)
+                break
+        metrics["mrr"] = mrr
+
+        dcg = 0.0
+        for i, item in enumerate(ranked_items[:k]):
+            if item.get("id") in relevant_ids:
+                dcg += 1.0 / (i + 1).bit_length()
+        ideal_dcg = sum(1.0 / (i + 1).bit_length() for i in range(min(len(relevant_ids), k)))
+        metrics["ndcg@k"] = dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+
+        return metrics
+
+
+evaluation_pipeline = EvaluationPipeline()
