@@ -35,3 +35,6 @@ langchain-core>=0.3.0
 orjson>=3.10.0
 bleach>=6.1.0
 cryptography>=42.0.0
+qrcode[pil]>=7.4.2
+beautifulsoup4>=4.12.3
+pyotp>=2.9.0

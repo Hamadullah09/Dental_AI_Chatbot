@@ -10,7 +10,7 @@ from app.core.logging import setup_logging, get_logger
 from app.core.redis import close_redis
 from app.middleware.metrics import PrometheusMiddleware, metrics_endpoint
 from app.middleware.request import RequestIDMiddleware, SecurityHeadersMiddleware, UserContextMiddleware
-from app.routers import admin, auth, chat, health
+from app.routers import admin, appointments, auth, chat, dentists, dental_records, health, prescriptions, settings as settings_router
 from app.services.users import seed_admin_user
 
 
@@ -54,6 +54,13 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
+app.include_router(dentists.router, prefix=settings.api_prefix)
+app.include_router(appointments.router, prefix=settings.api_prefix)
+app.include_router(prescriptions.router, prefix=settings.api_prefix)
+app.include_router(dental_records.router, prefix=settings.api_prefix)
+app.include_router(settings_router.router, prefix=settings.api_prefix)
+app.include_router(settings_router.help_router, prefix=settings.api_prefix)
+app.include_router(settings_router.admin_help_router, prefix=settings.api_prefix)
 
 if settings.prometheus_enabled:
     from fastapi import APIRouter

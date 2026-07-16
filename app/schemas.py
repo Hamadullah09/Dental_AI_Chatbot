@@ -1,9 +1,17 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models import DocumentStatus, DocumentType, ReviewStatus, TrustLevel, UserRole
+from app.models import (
+    AppointmentStatus,
+    DentistSpecialization,
+    DocumentStatus,
+    DocumentType,
+    ReviewStatus,
+    TrustLevel,
+    UserRole,
+)
 
 
 class UserCreate(BaseModel):
@@ -178,3 +186,420 @@ class FeedbackRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TimeSlot(BaseModel):
+    day_of_week: int = Field(ge=0, le=6)
+    start_time: str
+    end_time: str
+    is_available: bool = True
+
+
+class DentistBase(BaseModel):
+    full_name: str = Field(min_length=1)
+    qualification: str | None = None
+    specialization: list[DentistSpecialization] = []
+    experience_years: int | None = Field(default=None, ge=0)
+    clinic_name: str | None = None
+    consultation_fee: float | None = Field(default=None, ge=0)
+    available_timings: list[TimeSlot] = []
+    languages: list[str] = []
+    biography: str | None = None
+    profile_picture_url: str | None = None
+    is_available: bool = True
+    source_url: str | None = None
+
+
+class DentistCreate(DentistBase):
+    pass
+
+
+class DentistUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1)
+    qualification: str | None = None
+    specialization: list[DentistSpecialization] | None = None
+    experience_years: int | None = Field(default=None, ge=0)
+    clinic_name: str | None = None
+    consultation_fee: float | None = Field(default=None, ge=0)
+    available_timings: list[TimeSlot] | None = None
+    languages: list[str] | None = None
+    biography: str | None = None
+    profile_picture_url: str | None = None
+    is_available: bool | None = None
+    source_url: str | None = None
+
+
+class DentistRead(DentistBase):
+    id: str
+    rating: float
+    review_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DentistSearchParams(BaseModel):
+    query: str | None = None
+    specialization: DentistSpecialization | None = None
+    clinic: str | None = None
+    min_experience: int | None = Field(default=None, ge=0)
+    max_fee: float | None = Field(default=None, ge=0)
+    language: str | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class DentistSearchResult(BaseModel):
+    dentists: list[DentistRead]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class AppointmentBase(BaseModel):
+    dentist_id: str
+    appointment_date: datetime
+    duration_minutes: int = Field(default=30, ge=15, le=120)
+    notes: str | None = None
+    reason: str | None = None
+
+
+class AppointmentCreate(AppointmentBase):
+    pass
+
+
+class AppointmentUpdate(BaseModel):
+    appointment_date: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=15, le=120)
+    status: AppointmentStatus | None = None
+    notes: str | None = None
+    reason: str | None = None
+    rejection_reason: str | None = None
+
+
+class AppointmentRead(BaseModel):
+    id: str
+    patient_id: str
+    dentist_id: str
+    appointment_date: datetime
+    duration_minutes: int
+    status: AppointmentStatus
+    notes: str | None
+    reason: str | None
+    rejection_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+    patient: Optional["UserRead"] = None
+    dentist: Optional["DentistRead"] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AppointmentListParams(BaseModel):
+    status: AppointmentStatus | None = None
+    dentist_id: str | None = None
+    patient_id: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class AppointmentSearchParams(BaseModel):
+    status: AppointmentStatus | None = None
+    dentist_id: str | None = None
+    patient_id: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    query: str | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class AppointmentSearchResult(BaseModel):
+    appointments: list[AppointmentRead]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class AppointmentStatusUpdate(BaseModel):
+    status: AppointmentStatus
+    reason: str | None = None
+
+
+class PrescriptionSearchParams(BaseModel):
+    patient_id: str | None = None
+    dentist_id: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    query: str | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class PrescriptionBase(BaseModel):
+    appointment_id: str
+    diagnosis: str
+    medicines: str
+    dosage: str
+    frequency: str
+    duration: str
+    instructions: str | None = None
+    notes: str | None = None
+    follow_up_date: datetime | None = None
+    attachments: list[str] = []
+
+
+class PrescriptionCreate(PrescriptionBase):
+    pass
+
+
+class PrescriptionUpdate(BaseModel):
+    diagnosis: str | None = None
+    medicines: str | None = None
+    dosage: str | None = None
+    frequency: str | None = None
+    duration: str | None = None
+    instructions: str | None = None
+    notes: str | None = None
+    follow_up_date: datetime | None = None
+    attachments: list[str] | None = None
+
+
+class PrescriptionRead(BaseModel):
+    id: str
+    patient_id: str
+    dentist_id: str
+    appointment_id: str
+    diagnosis: str
+    medicines: str
+    dosage: str
+    frequency: str
+    duration: str
+    instructions: str | None
+    notes: str | None
+    follow_up_date: datetime | None
+    attachments: list[str]
+    created_at: datetime
+    updated_at: datetime
+    patient: Optional["UserRead"] = None
+    dentist: Optional["DentistRead"] = None
+    appointment: Optional["AppointmentRead"] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PrescriptionSearchResult(BaseModel):
+    prescriptions: list[PrescriptionRead]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class DentalRecordBase(BaseModel):
+    patient_id: str
+    previous_problems: str | None = None
+    diagnoses: str | None = None
+    treatments: str | None = None
+    surgeries: str | None = None
+    allergies: str | None = None
+    medications: str | None = None
+    xrays: list[str] = []
+    reports: list[str] = []
+    images: list[str] = []
+    notes: str | None = None
+    follow_up_records: str | None = None
+
+
+class DentalRecordCreate(DentalRecordBase):
+    pass
+
+
+class DentalRecordUpdate(BaseModel):
+    previous_problems: str | None = None
+    diagnoses: str | None = None
+    treatments: str | None = None
+    surgeries: str | None = None
+    allergies: str | None = None
+    medications: str | None = None
+    xrays: list[str] | None = None
+    reports: list[str] | None = None
+    images: list[str] | None = None
+    notes: str | None = None
+    follow_up_records: str | None = None
+
+
+class DentalRecordRead(BaseModel):
+    id: str
+    patient_id: str
+    dentist_id: str | None
+    previous_problems: str | None
+    diagnoses: str | None
+    treatments: str | None
+    surgeries: str | None
+    allergies: str | None
+    medications: str | None
+    xrays: list[str]
+    reports: list[str]
+    images: list[str]
+    notes: str | None
+    follow_up_records: str | None
+    created_at: datetime
+    updated_at: datetime
+    patient: Optional["UserRead"] = None
+    dentist: Optional["DentistRead"] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserSettingsBase(BaseModel):
+    theme: str = "system"
+    language: str = "en"
+    timezone: str = "UTC"
+    email_notifications: bool = True
+    sms_notifications: bool = False
+    browser_notifications: bool = True
+    appointment_reminders: bool = True
+    data_sharing: bool = False
+    two_factor_enabled: bool = False
+    ai_streaming: bool = True
+    ai_citations: bool = True
+    ai_visual_retrieval: bool = True
+    ai_response_style: str = "balanced"
+
+
+class UserSettingsUpdate(BaseModel):
+    theme: str | None = None
+    language: str | None = None
+    timezone: str | None = None
+    email_notifications: bool | None = None
+    sms_notifications: bool | None = None
+    browser_notifications: bool | None = None
+    appointment_reminders: bool | None = None
+    data_sharing: bool | None = None
+    two_factor_enabled: bool | None = None
+    ai_streaming: bool | None = None
+    ai_citations: bool | None = None
+    ai_visual_retrieval: bool | None = None
+    ai_response_style: str | None = None
+
+
+class UserSettingsRead(UserSettingsBase):
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class HelpArticleBase(BaseModel):
+    title: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+    tags: list[str] = []
+    is_published: bool = True
+    order: int = 0
+
+
+class HelpArticleCreate(HelpArticleBase):
+    pass
+
+
+class HelpArticleUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1)
+    content: str | None = Field(default=None, min_length=1)
+    category: str | None = Field(default=None, min_length=1)
+    tags: list[str] | None = None
+    is_published: bool | None = None
+    order: int | None = None
+
+
+class HelpArticleRead(HelpArticleBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class HelpCategoryRead(BaseModel):
+    category: str
+    count: int
+
+
+class ContactSupportCreate(BaseModel):
+    subject: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+
+
+class ContactSupportRead(BaseModel):
+    id: str
+    user_id: str
+    subject: str
+    message: str
+    category: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackCreateExtended(BaseModel):
+    type: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    rating: int | None = Field(default=None, ge=1, le=5)
+
+
+class DentalRecordSearchParams(BaseModel):
+    patient_id: str | None = None
+    dentist_id: str | None = None
+    query: str | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class DentalRecordSearchResult(BaseModel):
+    records: list[DentalRecordRead]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class DashboardStats(BaseModel):
+    total_users: int
+    total_dentists: int
+    total_patients: int
+    total_appointments: int
+    pending_appointments: int
+    completed_appointments: int
+    recent_activities: list[dict] = []
+
+
+class PatientDashboardStats(BaseModel):
+    upcoming_appointment: Optional["AppointmentRead"] = None
+    last_prescription: Optional["PrescriptionRead"] = None
+    recent_prescriptions: list["PrescriptionRead"] = []
+    recent_dental_records: list["DentalRecordRead"] = []
+    appointment_statistics: dict = {}
+
+
+class DentistDashboardStats(BaseModel):
+    todays_appointments: list["AppointmentRead"] = []
+    pending_appointments: list["AppointmentRead"] = []
+    recent_prescriptions: list["PrescriptionRead"] = []
+    recent_dental_records: list["DentalRecordRead"] = []
+    patient_statistics: dict = {}
+
+
+AppointmentRead.model_rebuild()
+PrescriptionRead.model_rebuild()
+DentalRecordRead.model_rebuild()
+PatientDashboardStats.model_rebuild()
+DentistDashboardStats.model_rebuild()

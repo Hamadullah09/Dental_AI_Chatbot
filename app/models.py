@@ -274,3 +274,218 @@ class ConversationMemory(Base):
     importance_score: Mapped[float] = mapped_column(Float, default=0.5)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AppointmentStatus(str, enum.Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    cancelled = "cancelled"
+    completed = "completed"
+    rejected = "rejected"
+    rescheduled = "rescheduled"
+
+
+class DentistSpecialization(str, enum.Enum):
+    general_dentistry = "general_dentistry"
+    orthodontics = "orthodontics"
+    periodontics = "periodontics"
+    endodontics = "endodontics"
+    prosthodontics = "prosthodontics"
+    oral_surgery = "oral_surgery"
+    pediatric_dentistry = "pediatric_dentistry"
+    cosmetic_dentistry = "cosmetic_dentistry"
+    implantology = "implantology"
+    radiology = "radiology"
+
+
+class Dentist(Base):
+    __tablename__ = "dentists"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, nullable=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    qualification: Mapped[str | None] = mapped_column(String(500))
+    specialization: Mapped[DentistSpecialization] = mapped_column(Enum(DentistSpecialization, create_type=False), nullable=False)
+    sub_specialization: Mapped[str | None] = mapped_column(String(255))
+    experience_years: Mapped[int] = mapped_column(Integer, default=0)
+    clinic_name: Mapped[str | None] = mapped_column(String(255))
+    clinic_address: Mapped[str | None] = mapped_column(Text)
+    clinic_phone: Mapped[str | None] = mapped_column(String(50))
+    clinic_email: Mapped[str | None] = mapped_column(String(255))
+    consultation_fee: Mapped[float] = mapped_column(Float, default=0.0)
+    available_timings: Mapped[str | None] = mapped_column(Text)
+    languages: Mapped[str | None] = mapped_column(String(500))
+    biography: Mapped[str | None] = mapped_column(Text)
+    profile_picture: Mapped[str | None] = mapped_column(String(1000))
+    rating: Mapped[float] = mapped_column(Float, default=0.0)
+    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User | None] = relationship(back_populates="dentist_profile")
+    appointments: Mapped[list["Appointment"]] = relationship(back_populates="dentist", cascade="all, delete-orphan")
+    availability_slots: Mapped[list["DentistAvailability"]] = relationship(back_populates="dentist", cascade="all, delete-orphan")
+
+
+class DentistAvailability(Base):
+    __tablename__ = "dentist_availability"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    dentist_id: Mapped[str] = mapped_column(ForeignKey("dentists.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    dentist: Mapped[Dentist] = relationship(back_populates="availability_slots")
+
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    dentist_id: Mapped[str] = mapped_column(ForeignKey("dentists.id", ondelete="CASCADE"), nullable=False, index=True)
+    appointment_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    appointment_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[AppointmentStatus] = mapped_column(Enum(AppointmentStatus, create_type=False), default=AppointmentStatus.pending, nullable=False, index=True)
+    chief_complaint: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
+    cancelled_by: Mapped[str | None] = mapped_column(String(36))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rescheduled_from_id: Mapped[str | None] = mapped_column(ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    patient: Mapped[User] = relationship(back_populates="appointments")
+    dentist: Mapped[Dentist] = relationship(back_populates="appointments")
+    prescription: Mapped["Prescription | None"] = relationship(back_populates="appointment", cascade="all, delete-orphan", uselist=False)
+    dental_record: Mapped["DentalRecord | None"] = relationship(back_populates="appointment", cascade="all, delete-orphan", uselist=False)
+
+    __table_args__ = (
+        UniqueConstraint("patient_id", "dentist_id", "appointment_date", name="uq_appointment_patient_dentist_time"),
+    )
+
+
+class Prescription(Base):
+    __tablename__ = "prescriptions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    dentist_id: Mapped[str] = mapped_column(ForeignKey("dentists.id", ondelete="CASCADE"), nullable=False, index=True)
+    appointment_id: Mapped[str] = mapped_column(ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    diagnosis: Mapped[str] = mapped_column(Text, nullable=False)
+    medicines: Mapped[str] = mapped_column(Text, nullable=False)
+    dosage: Mapped[str] = mapped_column(Text, nullable=False)
+    frequency: Mapped[str] = mapped_column(Text, nullable=False)
+    duration: Mapped[str] = mapped_column(Text, nullable=False)
+    instructions: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    follow_up_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attachment_path: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    patient: Mapped[User] = relationship(back_populates="prescriptions")
+    dentist: Mapped[Dentist] = relationship(back_populates="prescriptions")
+    appointment: Mapped[Appointment] = relationship(back_populates="prescription")
+
+
+class DentalRecord(Base):
+    __tablename__ = "dental_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    dentist_id: Mapped[str | None] = mapped_column(ForeignKey("dentists.id", ondelete="SET NULL"), nullable=True, index=True)
+    appointment_id: Mapped[str | None] = mapped_column(ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
+    previous_problems: Mapped[str | None] = mapped_column(Text)
+    diagnoses: Mapped[str | None] = mapped_column(Text)
+    treatments: Mapped[str | None] = mapped_column(Text)
+    surgeries: Mapped[str | None] = mapped_column(Text)
+    allergies: Mapped[str | None] = mapped_column(Text)
+    medications: Mapped[str | None] = mapped_column(Text)
+    xrays_path: Mapped[str | None] = mapped_column(String(1000))
+    reports_path: Mapped[str | None] = mapped_column(String(1000))
+    images_path: Mapped[str | None] = mapped_column(String(1000))
+    notes: Mapped[str | None] = mapped_column(Text)
+    follow_up_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    patient: Mapped[User] = relationship(back_populates="dental_records")
+    dentist: Mapped[Dentist | None] = relationship(back_populates="dental_records")
+    appointment: Mapped[Appointment | None] = relationship(back_populates="dental_record")
+
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    theme: Mapped[str] = mapped_column(String(20), default="light")
+    language: Mapped[str] = mapped_column(String(10), default="en")
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC")
+    email_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_notifications: Mapped[bool] = mapped_column(Boolean, default=False)
+    browser_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+    appointment_reminders: Mapped[bool] = mapped_column(Boolean, default=True)
+    data_sharing: Mapped[bool] = mapped_column(Boolean, default=False)
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    two_factor_secret: Mapped[str | None] = mapped_column(String(100))
+    ai_streaming: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_citation_visibility: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_visual_retrieval: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_response_style: Mapped[str] = mapped_column(String(20), default="balanced")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship(back_populates="settings")
+
+
+class HelpCenterArticle(Base):
+    __tablename__ = "help_center_articles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    tags: Mapped[str | None] = mapped_column(String(500))
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="normal")
+    assigned_to: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    response: Mapped[str | None] = mapped_column(Text)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship(back_populates="support_tickets", foreign_keys=[user_id])
+    assignee: Mapped[User | None] = relationship(foreign_keys=[assigned_to])
+
+
+User.dentist_profile = relationship("Dentist", back_populates="user", uselist=False)
+User.appointments = relationship("Appointment", back_populates="patient", foreign_keys="Appointment.patient_id", cascade="all, delete-orphan")
+User.prescriptions = relationship("Prescription", back_populates="patient", foreign_keys="Prescription.patient_id", cascade="all, delete-orphan")
+User.dental_records = relationship("DentalRecord", back_populates="patient", foreign_keys="DentalRecord.patient_id", cascade="all, delete-orphan")
+User.settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+User.support_tickets = relationship("SupportTicket", back_populates="user", foreign_keys="SupportTicket.user_id", cascade="all, delete-orphan")
+
+Dentist.prescriptions = relationship("Prescription", back_populates="dentist", foreign_keys="Prescription.dentist_id", cascade="all, delete-orphan")
+Dentist.dental_records = relationship("DentalRecord", back_populates="dentist", foreign_keys="DentalRecord.dentist_id", cascade="all, delete-orphan")
