@@ -172,6 +172,21 @@ def search_more(state: AgentState) -> AgentState:
         state.add_trace("search_more", "exhausted", "Max retries reached", duration_ms)
         return state
 
+    # Skip retries when Qdrant has zero chunks — go straight to fallback
+    if not state.retrieved_chunks:
+        try:
+            from app.services.rag import RAGService
+            rag = RAGService()
+            fallback = rag.generate_general_fallback_answer(state.question, user_role=state.user_role)
+            if fallback:
+                state.answer = fallback
+                state.answer_mode = "general_fallback"
+                duration_ms = (time.perf_counter() - start) * 1000
+                state.add_trace("search_more", "fallback_immediate", "Empty Qdrant, immediate fallback", duration_ms)
+                return state
+        except Exception:
+            pass
+
     try:
         from app.services.rag import RAGService
         rag = RAGService()
