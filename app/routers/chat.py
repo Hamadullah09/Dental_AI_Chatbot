@@ -183,7 +183,7 @@ def chat(
             visuals = []
 
     retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
-    RETRIEVAL_LATENCY.observe(retrieval_duration / 1000)
+    RETRIEVAL_LATENCY.labels(mode=answer_mode).observe(retrieval_duration / 1000)
 
     if answer_mode == "service_unavailable":
         raise HTTPException(status_code=503, detail="The dental AI model did not respond in time. Please try again.")
