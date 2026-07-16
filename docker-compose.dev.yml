@@ -15,7 +15,6 @@ services:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       UPLOAD_DIR: /app/uploaded_docs
       EXTRACTED_VISUALS_DIR: /app/uploads/extracted_visuals
-      LLM_PROVIDER: openai
     volumes:
       - ./uploaded_docs:/app/uploaded_docs
       - ./uploads:/app/uploads
