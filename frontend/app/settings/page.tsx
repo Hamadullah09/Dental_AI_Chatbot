@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
+import { useTheme, type Theme } from "@/lib/theme";
 import { Sun, Moon, Monitor, Save, Check } from "lucide-react";
 
 function SettingsContent() {
@@ -50,7 +50,7 @@ function SettingsContent() {
               ].map(({ value, icon: Icon, label }) => (
                 <button
                   key={value}
-                  onClick={() => setSettings((prev) => ({ ...prev, theme: value }))}
+                  onClick={() => setSettings((prev) => ({ ...prev, theme: value as Theme }))}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
                     settings.theme === value
                       ? "border-dental-accent bg-dental-accent/10 text-dental-accent"

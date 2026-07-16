@@ -260,8 +260,6 @@ function ChatContent() {
         messages={messages}
         isLoading={isLoading}
         onQuickAction={handleQuickAction}
-        onOpenModal={openModal}
-        onTriggerFileUpload={() => fileInputRef.current?.click()}
         onStatus={setToast}
         onRetryMessage={(retryQuestion) => submitPrompt(retryQuestion, null)}
         chatWindowRef={chatWindowRef}

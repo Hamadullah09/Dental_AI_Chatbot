@@ -1,4 +1,5 @@
-.next/
-node_modules/
-.env.local
-*.tsbuildinfo
+node_modules
+.next
+.git
+*.md
+.env*

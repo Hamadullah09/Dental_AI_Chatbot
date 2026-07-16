@@ -2,10 +2,11 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark";
 
 type ThemeContextValue = {
   theme: Theme;
+  setTheme: (t: Theme) => void;
   toggleTheme: () => void;
 };
 
@@ -23,6 +24,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({
     theme,
+    setTheme(t: Theme) {
+      setTheme(t);
+      localStorage.setItem("dental_ai_theme", t);
+      document.documentElement.dataset.theme = t;
+    },
     toggleTheme() {
       const nextTheme = theme === "dark" ? "light" : "dark";
       setTheme(nextTheme);
