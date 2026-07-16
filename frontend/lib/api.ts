@@ -306,25 +306,27 @@ export async function downloadDatasetReviewCsv(token: string) {
   return response.blob();
 }
 
-export function getDentists(params?: { name?: string; specialization?: string; clinic?: string; token?: string }) {
+export async function getDentists(params?: { name?: string; specialization?: string; clinic?: string; token?: string }) {
   const query = new URLSearchParams();
-  if (params?.name) query.set("name", params.name);
+  if (params?.name) query.set("query", params.name);
   if (params?.specialization) query.set("specialization", params.specialization);
   if (params?.clinic) query.set("clinic", params.clinic);
   const qs = query.toString();
-  return request<Dentist[]>(`/dentists${qs ? `?${qs}` : ""}`, { token: params?.token });
+  const result = await request<{ dentists: Dentist[]; total: number }>(`/dentists${qs ? `?${qs}` : ""}`, { token: params?.token });
+  return result.dentists;
 }
 
 export function getDentist(dentistId: string, token: string) {
   return request<Dentist>(`/dentists/${dentistId}`, { token });
 }
 
-export function getAppointments(token: string, params?: { status?: string; dentist_id?: string }) {
+export async function getAppointments(token: string, params?: { status?: string; dentist_id?: string }) {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
   if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
   const qs = query.toString();
-  return request<Appointment[]>(`/appointments${qs ? `?${qs}` : ""}`, { token });
+  const result = await request<{ appointments: Appointment[]; total: number }>(`/appointments${qs ? `?${qs}` : ""}`, { token });
+  return result.appointments;
 }
 
 export function getUpcomingAppointments(token: string) {
@@ -370,12 +372,13 @@ export function rescheduleAppointment(
   });
 }
 
-export function getPrescriptions(token: string, params?: { patient_id?: string; dentist_id?: string }) {
+export async function getPrescriptions(token: string, params?: { patient_id?: string; dentist_id?: string }) {
   const query = new URLSearchParams();
   if (params?.patient_id) query.set("patient_id", params.patient_id);
   if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
   const qs = query.toString();
-  return request<Prescription[]>(`/prescriptions${qs ? `?${qs}` : ""}`, { token });
+  const result = await request<{ prescriptions: Prescription[]; total: number }>(`/prescriptions${qs ? `?${qs}` : ""}`, { token });
+  return result.prescriptions;
 }
 
 export function getPrescription(prescriptionId: string, token: string) {
@@ -391,12 +394,13 @@ export function downloadPrescriptionPdf(prescriptionId: string, token: string) {
   });
 }
 
-export function getDentalRecords(token: string, params?: { patient_id?: string; dentist_id?: string }) {
+export async function getDentalRecords(token: string, params?: { patient_id?: string; dentist_id?: string }) {
   const query = new URLSearchParams();
   if (params?.patient_id) query.set("patient_id", params.patient_id);
   if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
   const qs = query.toString();
-  return request<DentalRecord[]>(`/dental-records${qs ? `?${qs}` : ""}`, { token });
+  const result = await request<{ records: DentalRecord[]; total: number }>(`/dental-records${qs ? `?${qs}` : ""}`, { token });
+  return result.records;
 }
 
 export function getDentalRecord(recordId: string, token: string) {
