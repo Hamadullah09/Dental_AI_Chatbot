@@ -115,3 +115,143 @@ export type DatasetGenerationStatus = {
   message: string | null;
   updated_at?: string | null;
 };
+
+export type DentistSpecialization =
+  | "general"
+  | "orthodontics"
+  | "periodontics"
+  | "endodontics"
+  | "prosthodontics"
+  | "oral_surgery"
+  | "pediatric"
+  | "cosmetic"
+  | "implantology";
+
+export type Dentist = {
+  id: string;
+  full_name: string;
+  qualification: string | null;
+  specialization: DentistSpecialization[];
+  experience_years: number | null;
+  clinic_name: string | null;
+  consultation_fee: number | null;
+  available_timings: TimeSlot[];
+  languages: string[];
+  biography: string | null;
+  profile_picture_url: string | null;
+  is_available: boolean;
+  source_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TimeSlot = {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+};
+
+export type AppointmentStatus =
+  | "pending"
+  | "confirmed"
+  | "completed"
+  | "cancelled"
+  | "rejected"
+  | "no_show";
+
+export type Appointment = {
+  id: string;
+  patient_id: string;
+  dentist_id: string;
+  appointment_date: string;
+  duration_minutes: number;
+  status: AppointmentStatus;
+  notes: string | null;
+  reason: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  patient?: User | null;
+  dentist?: Dentist | null;
+};
+
+export type Prescription = {
+  id: string;
+  patient_id: string;
+  dentist_id: string;
+  appointment_id: string;
+  diagnosis: string;
+  medicines: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  instructions: string | null;
+  notes: string | null;
+  follow_up_date: string | null;
+  attachments: string[];
+  created_at: string;
+  updated_at: string;
+  patient?: User | null;
+  dentist?: Dentist | null;
+  appointment?: Appointment | null;
+};
+
+export type DentalRecord = {
+  id: string;
+  patient_id: string;
+  dentist_id: string;
+  previous_problems: string | null;
+  diagnoses: string | null;
+  treatments: string | null;
+  surgeries: string | null;
+  allergies: string | null;
+  medications: string | null;
+  xrays: string[];
+  reports: string[];
+  images: string[];
+  notes: string | null;
+  follow_up_records: string | null;
+  created_at: string;
+  updated_at: string;
+  patient?: User | null;
+  dentist?: Dentist | null;
+};
+
+export type UserSettings = {
+  theme: string;
+  language: string;
+  timezone: string;
+  email_notifications: boolean;
+  push_notifications: boolean;
+  chat_history_retention_days: number;
+  data_sharing_consent: boolean;
+  hipaa_consent: boolean;
+  ai_disclaimer_acknowledged: boolean;
+};
+
+export type HelpArticle = {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  tags: string[];
+  is_published: boolean;
+  view_count: number;
+  helpful_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SupportTicket = {
+  id: string;
+  user_id: string;
+  subject: string;
+  message: string;
+  category: string;
+  priority: string;
+  status: string;
+  admin_response: string | null;
+  created_at: string;
+  updated_at: string;
+};

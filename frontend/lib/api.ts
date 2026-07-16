@@ -1,4 +1,4 @@
-import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, DocumentIngestionLog, DocumentItem, User, UserRole } from "./types";
+import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, Dentist, Appointment, Prescription, DentalRecord, UserSettings, HelpArticle, SupportTicket, DocumentIngestionLog, DocumentItem, User, UserRole } from "./types";
 
 type ApiOptions = RequestInit & {
   token?: string | null;
@@ -304,4 +304,160 @@ export async function downloadDatasetReviewCsv(token: string) {
     throw new ApiError(detail || "Dataset download failed", response.status);
   }
   return response.blob();
+}
+
+export function getDentists(params?: { name?: string; specialization?: string; clinic?: string; token?: string }) {
+  const query = new URLSearchParams();
+  if (params?.name) query.set("name", params.name);
+  if (params?.specialization) query.set("specialization", params.specialization);
+  if (params?.clinic) query.set("clinic", params.clinic);
+  const qs = query.toString();
+  return request<Dentist[]>(`/dentists${qs ? `?${qs}` : ""}`, { token: params?.token });
+}
+
+export function getDentist(dentistId: string, token: string) {
+  return request<Dentist>(`/dentists/${dentistId}`, { token });
+}
+
+export function getAppointments(token: string, params?: { status?: string; dentist_id?: string }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
+  const qs = query.toString();
+  return request<Appointment[]>(`/appointments${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function getUpcomingAppointments(token: string) {
+  return request<Appointment[]>("/appointments/upcoming", { token });
+}
+
+export function createAppointment(input: {
+  dentist_id: string;
+  appointment_date: string;
+  duration_minutes?: number;
+  notes?: string;
+  reason?: string;
+}, token: string) {
+  return request<Appointment>("/appointments", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAppointmentStatus(
+  appointmentId: string,
+  status: string,
+  reason?: string,
+  token?: string
+) {
+  return request<Appointment>(`/appointments/${appointmentId}/status`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ status, reason }),
+  });
+}
+
+export function rescheduleAppointment(
+  appointmentId: string,
+  newDate: string,
+  token: string
+) {
+  return request<Appointment>(`/appointments/${appointmentId}/reschedule`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ new_date: newDate }),
+  });
+}
+
+export function getPrescriptions(token: string, params?: { patient_id?: string; dentist_id?: string }) {
+  const query = new URLSearchParams();
+  if (params?.patient_id) query.set("patient_id", params.patient_id);
+  if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
+  const qs = query.toString();
+  return request<Prescription[]>(`/prescriptions${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function getPrescription(prescriptionId: string, token: string) {
+  return request<Prescription>(`/prescriptions/${prescriptionId}`, { token });
+}
+
+export function downloadPrescriptionPdf(prescriptionId: string, token: string) {
+  return fetch(`${getApiBaseUrl()}/api/prescriptions/${prescriptionId}/pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => {
+    if (!r.ok) throw new ApiError("PDF download failed", r.status);
+    return r.blob();
+  });
+}
+
+export function getDentalRecords(token: string, params?: { patient_id?: string; dentist_id?: string }) {
+  const query = new URLSearchParams();
+  if (params?.patient_id) query.set("patient_id", params.patient_id);
+  if (params?.dentist_id) query.set("dentist_id", params.dentist_id);
+  const qs = query.toString();
+  return request<DentalRecord[]>(`/dental-records${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function getDentalRecord(recordId: string, token: string) {
+  return request<DentalRecord>(`/dental-records/${recordId}`, { token });
+}
+
+export function downloadDentalRecordPdf(recordId: string, token: string) {
+  return fetch(`${getApiBaseUrl()}/api/dental-records/${recordId}/pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => {
+    if (!r.ok) throw new ApiError("PDF download failed", r.status);
+    return r.blob();
+  });
+}
+
+export function getSettings(token: string) {
+  return request<UserSettings>("/settings", { token });
+}
+
+export function updateSettings(input: Partial<UserSettings>, token: string) {
+  return request<UserSettings>("/settings", {
+    method: "PUT",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function downloadPersonalData(token: string) {
+  return fetch(`${getApiBaseUrl()}/api/settings/download-data`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => {
+    if (!r.ok) throw new ApiError("Download failed", r.status);
+    return r.blob();
+  });
+}
+
+export function deleteAccount(token: string) {
+  return request("/settings/delete-account", { method: "DELETE", token });
+}
+
+export function getHelpArticles(token: string, params?: { category?: string; search?: string }) {
+  const query = new URLSearchParams();
+  if (params?.category) query.set("category", params.category);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return request<HelpArticle[]>(`/help/articles${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function getHelpArticle(articleId: string, token: string) {
+  return request<HelpArticle>(`/help/articles/${articleId}`, { token });
+}
+
+export function submitSupportTicket(input: {
+  subject: string;
+  message: string;
+  category: string;
+  priority?: string;
+}, token: string) {
+  return request<SupportTicket>("/help/contact", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
 }

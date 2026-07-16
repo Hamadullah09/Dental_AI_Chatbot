@@ -23,6 +23,7 @@ import {
   Settings,
   Sparkles,
   Star,
+  Stethoscope,
   Trash2,
   X,
 } from "lucide-react";
@@ -241,17 +242,18 @@ export function Sidebar({
 
   const actionButtonClass = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-dental-textSecondary transition-all hover:bg-dental-border hover:text-dental-textPrimary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60 dark:text-white/75 dark:hover:bg-white/10 dark:hover:text-white";
 
-  const primaryLinks = [
+  type NavItem = { icon: any; label: string; path?: string; modal?: string };
+  const primaryLinks: NavItem[] = [
     { icon: Rows3, label: "Clinical library", modal: "library" },
-    { icon: Clock3, label: "Appointments", modal: "appointments" },
-    { icon: MoreHorizontal, label: "Dental tools", modal: "tips" },
-  ] as const;
+    { icon: Clock3, label: "Appointments", path: "/appointments" },
+    { icon: Stethoscope, label: "Dentists", path: "/dentists" },
+  ];
 
-  const accountLinks = [
-    { icon: MessageSquare, label: "Profile", modal: "profile" },
-    { icon: Settings, label: "Settings", modal: "settings" },
-    { icon: CircleHelp, label: "Help", modal: "tips" },
-  ] as const;
+  const accountLinks: NavItem[] = [
+    { icon: MessageSquare, label: "Profile", path: "/profile" },
+    { icon: Settings, label: "Settings", path: "/settings" },
+    { icon: CircleHelp, label: "Help Center", path: "/help" },
+  ];
 
   function renderSessionItem(session: ChatSession) {
     const displayTitle = session.title || "Untitled chat";
@@ -565,7 +567,11 @@ export function Sidebar({
                       key={item.label}
                       type="button"
                       onClick={() => {
-                        onOpenModal(item.modal);
+                        if (item.path) {
+                          router.push(item.path);
+                        } else if (item.modal) {
+                          onOpenModal(item.modal);
+                        }
                         onClose();
                       }}
                       className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium text-dental-textPrimary transition-all duration-150 hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60 dark:text-white dark:hover:bg-white/10 ${
@@ -668,7 +674,11 @@ export function Sidebar({
                       key={item.label}
                       type="button"
                       onClick={() => {
-                        onOpenModal(item.modal);
+                        if (item.path) {
+                          router.push(item.path);
+                        } else if (item.modal) {
+                          onOpenModal(item.modal);
+                        }
                         onClose();
                       }}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-dental-textPrimary transition-colors hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60 dark:text-white dark:hover:bg-white/10"

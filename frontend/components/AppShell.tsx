@@ -67,6 +67,10 @@ export function AppShell({ title, subtitle, children }: {
       router.push("/profile");
     } else if (modalName === "settings") {
       router.push("/settings");
+    } else if (modalName === "appointments") {
+      router.push("/appointments");
+    } else if (modalName === "help") {
+      router.push("/help");
     } else {
       setActiveModal(modalName);
     }
