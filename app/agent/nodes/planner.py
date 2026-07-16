@@ -111,6 +111,18 @@ def search_more(state: AgentState) -> AgentState:
 
     state.retry_count += 1
     if state.retry_count > state.max_retries:
+        try:
+            from app.services.rag import RAGService
+            rag = RAGService()
+            fallback = rag.generate_general_fallback_answer(state.question, user_role=state.user_role)
+            if fallback:
+                state.answer = fallback
+                state.answer_mode = "general_fallback"
+                duration_ms = (time.perf_counter() - start) * 1000
+                state.add_trace("search_more", "exhausted_fallback", "General fallback via LLM", duration_ms)
+                return state
+        except Exception:
+            pass
         state.answer = (
             "I found limited information on this topic in my dental knowledge base. "
             "I recommend consulting a dental professional for accurate diagnosis and treatment. "
@@ -158,7 +170,23 @@ def search_more(state: AgentState) -> AgentState:
 
 
 def respond_with_uncertainty(state: AgentState) -> AgentState:
+    start = time.perf_counter()
     settings = get_settings()
+
+    try:
+        from app.services.rag import RAGService
+        rag = RAGService()
+        fallback = rag.generate_general_fallback_answer(state.question, user_role=state.user_role)
+        if fallback:
+            state.answer = fallback
+            state.answer_mode = "general_fallback"
+            duration_ms = (time.perf_counter() - start) * 1000
+            state.add_trace("uncertainty_responder", "completed", "General fallback via LLM", duration_ms)
+            return state
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("uncertainty_responder", "fallback_error", str(exc), duration_ms)
+
     state.answer = (
         "I don't have sufficient information in my dental knowledge base to answer this question accurately. "
         "This topic may require specialized clinical knowledge or the latest research. "
