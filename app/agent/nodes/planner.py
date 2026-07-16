@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from typing import Any, Literal
 
 from app.agent.state import AgentState
@@ -36,6 +37,31 @@ DIRECT_ANSWER_KEYWORDS = {
     "hello", "hi", "thanks", "thank you", "goodbye", "bye",
 }
 
+CONVERSATIONAL_PATTERNS = (
+    r"hi",
+    r"hello",
+    r"hey",
+    r"good morning",
+    r"good evening",
+    r"thanks",
+    r"thank you",
+    r"bye",
+    r"goodbye",
+)
+
+
+def _contains_keyword(question_lower: str, keyword: str) -> bool:
+    if " " in keyword:
+        return keyword in question_lower
+    return re.search(rf"\b{re.escape(keyword)}\b", question_lower) is not None
+
+
+def _is_conversational_query(question_lower: str) -> bool:
+    normalized = re.sub(r"\s+", " ", question_lower).strip(" .,!?:;\n\t")
+    if not normalized:
+        return False
+    return any(re.fullmatch(pattern, normalized) for pattern in CONVERSATIONAL_PATTERNS)
+
 
 def detect_intent(state: AgentState) -> AgentState:
     start = time.perf_counter()
@@ -49,7 +75,7 @@ def detect_intent(state: AgentState) -> AgentState:
         state.intent = "treatment"
     elif any(word in question_lower for word in SYMPTOM_KEYWORDS):
         state.intent = "symptom"
-    elif any(phrase in question_lower for phrase in DIRECT_ANSWER_KEYWORDS):
+    elif any(_contains_keyword(question_lower, phrase) for phrase in DIRECT_ANSWER_KEYWORDS):
         state.intent = "direct"
     else:
         state.intent = "general"
@@ -65,8 +91,7 @@ def can_answer_directly(state: AgentState) -> Literal["yes", "no"]:
     if state.intent == "emergency":
         return "no"
     question_lower = state.question.lower()
-    greeting_patterns = {"hello", "hi", "hey", "good morning", "good evening", "thanks", "thank you", "bye", "goodbye"}
-    if any(g in question_lower for g in greeting_patterns):
+    if _is_conversational_query(question_lower):
         return "yes"
     return "no"
 
@@ -75,15 +100,27 @@ def generate_direct_answer(state: AgentState) -> AgentState:
     start = time.perf_counter()
     settings = get_settings()
 
-    question_lower = state.question.lower()
-    if any(g in question_lower for g in {"hello", "hi", "hey", "good morning", "good evening"}):
+    question_lower = re.sub(r"\s+", " ", state.question.lower()).strip(" .,!?:;\n\t")
+    if question_lower in {"hello", "hi", "hey", "good morning", "good evening"}:
         state.answer = "Hello! I'm DentalGPT, your AI dental assistant. How can I help you today?"
-    elif any(g in question_lower for g in {"thanks", "thank you"}):
+    elif question_lower in {"thanks", "thank you"}:
         state.answer = "You're welcome! Feel free to ask if you have more dental questions."
-    elif any(g in question_lower for g in {"bye", "goodbye"}):
+    elif question_lower in {"bye", "goodbye"}:
         state.answer = "Goodbye! Take care of your dental health!"
     else:
-        state.answer = settings.medical_disclaimer
+        try:
+            from app.services.rag import RAGService
+
+            rag = RAGService()
+            fallback = rag.generate_general_fallback_answer(state.question, user_role=state.user_role)
+            state.answer = fallback or settings.medical_disclaimer
+            state.answer_mode = "general_fallback" if fallback else "insufficient_evidence"
+            state.sources = []
+            duration_ms = (time.perf_counter() - start) * 1000
+            state.add_trace("direct_answer", "completed", f"Mode: {state.answer_mode}", duration_ms)
+            return state
+        except Exception:
+            state.answer = settings.medical_disclaimer
 
     state.answer_mode = "conversational"
     state.sources = []
@@ -93,6 +130,8 @@ def generate_direct_answer(state: AgentState) -> AgentState:
 
 
 def has_enough_evidence(state: AgentState) -> Literal["yes", "no"]:
+    if state.intent == "visual" and state.retrieved_visuals:
+        return "yes"
     if not state.retrieved_chunks:
         return "no"
     if state.intent == "emergency":

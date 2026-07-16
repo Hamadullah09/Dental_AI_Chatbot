@@ -280,7 +280,9 @@ def build_langgraph():
 
     workflow.add_conditional_edges(
         "search_more",
-        lambda state: "enough" if state.retrieved_chunks and state.retry_count <= state.max_retries else "uncertain",
+        lambda state: "enough"
+        if (state.retry_count <= state.max_retries and (state.retrieved_chunks or (state.intent == "visual" and state.retrieved_visuals)))
+        else "uncertain",
         {
             "enough": "build_context",
             "uncertain": "respond_with_uncertainty",

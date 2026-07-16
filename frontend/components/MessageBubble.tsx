@@ -20,6 +20,7 @@ export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps
   const [showSources, setShowSources] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const isAssistant = message.role === "assistant";
+  const hasRenderableContent = message.content.trim().length > 0;
 
   async function handleFeedback(rating: number, type: "helpful" | "needs-work") {
     if (!token || !message.id) return;
@@ -136,13 +137,15 @@ export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps
           )}
 
           {/* Timestamp and Feedback bar */}
+          {(!isAssistant || hasRenderableContent) && (
           <div className={`flex w-full items-center gap-2 px-1 ${isAssistant ? "justify-between" : "justify-end"}`}>
             <span className="text-[11px] text-dental-textSecondary">
             {message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
+          )}
 
-          {isAssistant && message.id && (
+          {isAssistant && message.id && hasRenderableContent && (
             <div className="relative flex flex-wrap items-center gap-1 px-1">
               <button type="button" onClick={handleCopy} className="rounded-lg p-1.5 text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary" title="Copy">
                 <Copy size={17} />

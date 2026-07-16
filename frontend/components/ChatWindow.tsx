@@ -74,6 +74,7 @@ export function ChatWindow({
           /* Active Chat Conversation View */
           <div className="flex w-full flex-col gap-1 pb-28">
             {messages.map((message, index) => (
+              (message.role === "assistant" && !message.content.trim() && (!message.sources || message.sources.length === 0) && (!message.visuals || message.visuals.length === 0)) ? null : (
               <MessageBubble 
                 key={message.id} 
                 message={message} 
@@ -83,6 +84,7 @@ export function ChatWindow({
                   if (question) onRetryMessage(question);
                 } : undefined}
               />
+              )
             ))}
 
             {/* Typing Indicator */}
