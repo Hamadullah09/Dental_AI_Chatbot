@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -161,34 +162,34 @@ class DentistSyncService:
         downloaded = self.downloader.download_all(image_data)
         result.images_downloaded = len(downloaded)
 
-        for profile in profiles:
+        for idx, profile in enumerate(profiles):
             try:
                 image_path = downloaded.get(profile.name)
                 data = self._profile_to_dict(profile, image_path)
 
-                if not force:
-                    existing = self.repo.find_existing(
-                        profile_url=profile.profile_url,
-                        name=profile.name,
-                    )
-                    if existing and existing.content_hash == profile.content_hash:
-                        result.unchanged += 1
-                        continue
-
-                was_new = self.repo.find_existing(
+                existing = self.repo.find_existing(
                     profile_url=profile.profile_url,
                     name=profile.name,
-                ) is None
+                )
+
+                if not force and existing and existing.content_hash == profile.content_hash:
+                    result.unchanged += 1
+                    continue
 
                 self.repo.upsert_from_scraped(data)
+                self.db.flush()
 
-                if was_new:
-                    result.added += 1
-                else:
+                if existing:
                     result.updated += 1
+                else:
+                    result.added += 1
+
+                if (idx + 1) % 10 == 0:
+                    self.db.commit()
+                    logger.info("Committed batch at profile %d/%d", idx + 1, len(profiles))
             except Exception as exc:
                 msg = f"Failed to sync {profile.name}: {exc}"
-                logger.error(msg)
+                logger.error(msg, exc_info=True)
                 result.errors.append(msg)
                 try:
                     self.db.rollback()
@@ -196,11 +197,17 @@ class DentistSyncService:
                     pass
 
         try:
-            self.db.commit()
+            if self.db.is_active:
+                self.db.commit()
+            count = self.db.execute(text("SELECT count(*) FROM dentists")).scalar()
+            logger.info("After commit: %d dentists in DB", count)
         except Exception as exc:
-            logger.error("Failed to commit sync results: %s", exc)
+            logger.error("Failed to commit sync results: %s", exc, exc_info=True)
             result.errors.append(f"Commit failed: {exc}")
-            self.db.rollback()
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
         result.elapsed_seconds = time.monotonic() - start
         logger.info(
             "Sync complete: added=%d updated=%d unchanged=%d images=%d errors=%d in %.1fs",
