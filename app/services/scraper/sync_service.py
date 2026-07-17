@@ -175,21 +175,32 @@ class DentistSyncService:
                         result.unchanged += 1
                         continue
 
+                was_new = self.repo.find_existing(
+                    profile_url=profile.profile_url,
+                    name=profile.name,
+                ) is None
+
                 self.repo.upsert_from_scraped(data)
 
-                if existing := self.repo.find_existing(profile_url=profile.profile_url, name=profile.name):
-                    if existing.content_hash != profile.content_hash:
-                        result.updated += 1
-                    else:
-                        result.unchanged += 1
-                else:
+                if was_new:
                     result.added += 1
+                else:
+                    result.updated += 1
             except Exception as exc:
                 msg = f"Failed to sync {profile.name}: {exc}"
                 logger.error(msg)
                 result.errors.append(msg)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as exc:
+            logger.error("Failed to commit sync results: %s", exc)
+            result.errors.append(f"Commit failed: {exc}")
+            self.db.rollback()
         result.elapsed_seconds = time.monotonic() - start
         logger.info(
             "Sync complete: added=%d updated=%d unchanged=%d images=%d errors=%d in %.1fs",
