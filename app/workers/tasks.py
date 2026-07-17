@@ -85,12 +85,55 @@ async def generate_dataset_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str,
         return {"status": "failed", "error": str(exc)}
 
 
+async def sync_dentists_task(ctx: dict[str, Any], force: bool = False) -> dict[str, Any]:
+    from app.services.scraper.sync_service import DentistSyncService
+
+    logger.info("Starting background dentist sync (force=%s)", force)
+    with SessionLocal() as db:
+        try:
+            service = DentistSyncService(db)
+            result = service.sync(force=force)
+            logger.info(
+                "Dentist sync complete: added=%d updated=%d errors=%d",
+                result.added, result.updated, len(result.errors),
+            )
+            return {
+                "status": "completed",
+                "added": result.added,
+                "updated": result.updated,
+                "unchanged": result.unchanged,
+                "images_downloaded": result.images_downloaded,
+                "errors": result.errors,
+                "elapsed_seconds": result.elapsed_seconds,
+            }
+        except Exception as exc:
+            logger.error("Dentist sync failed: %s", exc)
+            return {"status": "failed", "error": str(exc)}
+
+
+async def reindex_dentists_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    from app.services.scraper.embedding_service import DentistEmbeddingService
+
+    logger.info("Starting dentist reindex")
+    with SessionLocal() as db:
+        try:
+            service = DentistEmbeddingService(db)
+            result = service.reindex()
+            logger.info("Dentist reindex complete: %s", result)
+            return {"status": "completed", **result}
+        except Exception as exc:
+            logger.error("Dentist reindex failed: %s", exc)
+            return {"status": "failed", "error": str(exc)}
+
+
 class WorkerSettings:
     functions = [
         ingest_document_task,
         cleanup_expired_tokens,
         cleanup_old_audit_logs,
         generate_dataset_task,
+        sync_dentists_task,
+        reindex_dentists_task,
     ]
     queues = ["default"]
     max_jobs = 4

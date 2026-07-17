@@ -198,6 +198,7 @@ class TimeSlot(BaseModel):
 class DentistBase(BaseModel):
     full_name: str = Field(min_length=1)
     qualification: str | None = None
+    degrees: str | None = None
     specialization: list[DentistSpecialization] = []
     experience_years: int | None = Field(default=None, ge=0)
     clinic_name: str | None = None
@@ -208,6 +209,14 @@ class DentistBase(BaseModel):
     profile_picture_url: str | None = None
     is_available: bool = True
     source_url: str | None = None
+    department: str | None = None
+    hospital: str | None = None
+    gender: str | None = None
+    clinical_interests: str | None = None
+    research_interests: str | None = None
+    education: str | None = None
+    profile_url: str | None = None
+    image_url: str | None = None
 
 
 class DentistCreate(DentistBase):
@@ -231,8 +240,24 @@ class DentistUpdate(BaseModel):
 
 class DentistRead(DentistBase):
     id: str
+    slug: str | None = None
     rating: float
     review_count: int
+    department: str | None = None
+    hospital: str | None = None
+    gender: str | None = None
+    degrees: str | None = None
+    clinical_interests: str | None = None
+    research_interests: str | None = None
+    education: str | None = None
+    consultation_timings: str | None = None
+    available_days: str | None = None
+    appointment_url: str | None = None
+    profile_url: str | None = None
+    image_url: str | None = None
+    image_path: str | None = None
+    data_version: int = 1
+    last_scraped_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -603,3 +628,161 @@ PrescriptionRead.model_rebuild()
 DentalRecordRead.model_rebuild()
 PatientDashboardStats.model_rebuild()
 DentistDashboardStats.model_rebuild()
+
+
+# ── Dentist Scraper Schemas ──────────────────────────────────────────────
+
+
+class DentistProfileSchema(BaseModel):
+    """Schema for a scraped dentist profile."""
+    name: str
+    slug: str = ""
+    profile_id: str = ""
+    profile_url: str = ""
+    qualifications: str = ""
+    degrees: str = ""
+    specialty: str = ""
+    department: str = "Dentistry"
+    hospital: str = "Aga Khan University Hospital"
+    experience_years: int = 0
+    gender: str = ""
+    clinic_name: str = "Aga Khan University Hospital"
+    clinic_address: str = ""
+    consultation_fee: float = 0.0
+    consultation_timings: str = ""
+    available_days: str = ""
+    appointment_url: str = ""
+    languages: list[str] = []
+    biography: str = ""
+    areas_of_interest: str = ""
+    clinical_interests: str = ""
+    research_interests: str = ""
+    education: str = ""
+    certifications: str = ""
+    awards: str = ""
+    publications: str = ""
+    memberships: str = ""
+    image_url: str = ""
+    image_path: str = ""
+    phone: str = ""
+    email: str = ""
+    hospital_address: str = ""
+    content_hash: str = ""
+    schedule: list[dict[str, str]] = []
+
+
+class DentistFullRead(BaseModel):
+    """Full dentist read schema with all scraped fields."""
+    id: str
+    full_name: str
+    slug: str | None = None
+    qualification: str | None = None
+    degrees: str | None = None
+    specialization: str = ""
+    department: str | None = None
+    hospital: str | None = None
+    experience_years: int = 0
+    gender: str | None = None
+    clinic_name: str | None = None
+    clinic_address: str | None = None
+    clinic_phone: str | None = None
+    clinic_email: str | None = None
+    consultation_fee: float = 0.0
+    consultation_timings: str | None = None
+    available_days: str | None = None
+    appointment_url: str | None = None
+    languages: list[str] = []
+    biography: str | None = None
+    areas_of_interest: str | None = None
+    clinical_interests: str | None = None
+    research_interests: str | None = None
+    education: str | None = None
+    certifications: str | None = None
+    awards: str | None = None
+    publications: str | None = None
+    memberships: str | None = None
+    profile_picture: str | None = None
+    image_url: str | None = None
+    image_path: str | None = None
+    profile_url: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    hospital_address: str | None = None
+    source_url: str | None = None
+    rating: float = 0.0
+    total_reviews: int = 0
+    is_active: bool = True
+    data_version: int = 1
+    last_scraped_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class DentistSearchParamsV2(BaseModel):
+    """Enhanced search parameters for dentist search."""
+    query: str | None = None
+    specialization: str | None = None
+    clinic: str | None = None
+    hospital: str | None = None
+    min_experience: int | None = Field(default=None, ge=0)
+    max_fee: float | None = Field(default=None, ge=0)
+    language: str | None = None
+    gender: str | None = None
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=50)
+    sort_by: str = Field(default="name", pattern="^(name|experience|rating|fee)$")
+    sort_order: str = Field(default="asc", pattern="^(asc|desc)$")
+
+
+class DentistSearchResultV2(BaseModel):
+    """Paginated dentist search result."""
+    dentists: list[DentistFullRead]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class SyncRequest(BaseModel):
+    """Request body for dentist sync."""
+    force: bool = False
+
+
+class SyncResultResponse(BaseModel):
+    """Response from a sync operation."""
+    added: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    images_downloaded: int = 0
+    errors: list[str] = []
+    elapsed_seconds: float = 0.0
+    total_profiles: int = 0
+
+
+class ExportResponse(BaseModel):
+    """Response from export operation."""
+    csv_path: str | None = None
+    json_path: str | None = None
+    total_exported: int = 0
+
+
+class DentistSpecializationStat(BaseModel):
+    """Specialization with count."""
+    value: str
+    label: str
+    count: int
+
+
+class DentistAvailabilitySlot(BaseModel):
+    """Availability slot."""
+    day_of_week: int
+    start_time: str
+    end_time: str
+    is_available: bool = True
+
+
+class ReindexRequest(BaseModel):
+    """Request body for reindex operation."""
+    pass

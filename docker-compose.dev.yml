@@ -19,6 +19,7 @@ services:
       - ./uploaded_docs:/app/uploaded_docs
       - ./uploads:/app/uploads
       - ./knowledge_base:/app/knowledge_base
+      - ./uploads/dentists:/app/uploads/dentists
     depends_on:
       postgres:
         condition: service_healthy

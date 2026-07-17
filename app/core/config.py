@@ -191,6 +191,27 @@ class Settings(BaseSettings):
     worker_max_retries: int = 3
     worker_retry_delay_seconds: int = 5
 
+    scraper_base_url: str = "https://hospitals.aku.edu"
+    scraper_dentistry_url: str = "https://hospitals.aku.edu/pakistan/patientservices/pages/findadoctor.aspx?Spec=Dentistry"
+    scraper_profile_url_template: str = "https://hospitals.aku.edu/pakistan/patientservices/pages/profiles.aspx?ProfileID={profile_id}&Name={name}&page=findadoctor"
+    scraper_schedule_api: str = "https://akuhservices.aku.edu/FindDocService.svc/json/getDoctorScheduleByDoctorID_W"
+    scraper_image_base_url: str = "https://hospitals.aku.edu/pakistan/patientservices/Lists/Faculty/Attachments"
+    scraper_user_agent: str = "DentalAIChatbot/1.0 (Academic Research; +https://dental-ai.local)"
+    scraper_request_delay_seconds: float = 2.0
+    scraper_request_timeout_seconds: int = 30
+    scraper_max_retries: int = 3
+    scraper_retry_backoff_multiplier: float = 1.5
+    scraper_images_per_page: int = 12
+    scraper_max_pages: int = 10
+    scraper_output_dir: Path = Path("uploads/dentists")
+    scraper_images_dir: Path = Path("uploads/dentists/images")
+    scraper_csv_path: Path = Path("uploads/dentists/dentists.csv")
+    scraper_json_path: Path = Path("uploads/dentists/dentists.json")
+    scraper_dentist_qdrant_collection: str = "dental_dentists"
+    scraper_sync_interval_hours: int = 24
+    scraper_respect_robots_txt: bool = True
+    scraper_max_concurrent_requests: int = 3
+
     medical_disclaimer: str = (
         "Dental AI is for education and clinical decision support only. "
         "It does not replace diagnosis, treatment planning, or emergency care from a licensed dentist."
