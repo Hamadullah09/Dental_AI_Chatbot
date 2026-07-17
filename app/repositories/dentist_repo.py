@@ -98,6 +98,8 @@ class DentistRepository:
                     continue
                 if value is not None and value != "" and value != 0 and value != 0.0:
                     setattr(existing, key, value)
+            existing.is_active = True
+            existing.is_verified = True
             existing.data_version += 1
             existing.last_scraped_at = datetime.now(timezone.utc)
             self.db.flush()
