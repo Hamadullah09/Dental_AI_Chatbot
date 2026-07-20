@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     bge_reranker_model: str = "BAAI/bge-reranker-v2-m3"
     bge_reranker_max_chunks: int = 40
     bge_reranker_max_chars: int = 1600
-    multi_query_max_variants: int = 4
+    multi_query_max_variants: int = 2
     multi_query_confidence_threshold: float = 1.35
     hyde_confidence_threshold: float = 1.35
     hyde_max_passage_chars: int = 900
@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096
     ollama_num_predict: int = 512
     ollama_top_p: float = 0.8
-    ollama_timeout_seconds: int = 300
+    ollama_timeout_seconds: int = 120
     ollama_vision_timeout_seconds: int = 180
     ollama_keep_alive: str = "0s"
     ollama_connect_timeout: float = 5.0

@@ -109,8 +109,6 @@ class LLMService:
                 pool=5.0,
             )
             with httpx.Client(timeout=timeout) as client:
-                tags_response = client.get(f"{base_url}/api/tags")
-                tags_response.raise_for_status()
                 response = client.post(
                     f"{base_url}/api/generate",
                     json=payload,
@@ -124,6 +122,58 @@ class LLMService:
             ) from exc
         answer = data.get("response", "").strip()
         return clean_llm_response(answer)
+
+    def generate_stream(self, prompt: str, *, system_prompt: str, temperature: float = 0.2, top_p: float | None = None):
+        if self.provider == "ollama":
+            yield from self._generate_ollama_stream(prompt, system_prompt=system_prompt, temperature=temperature, top_p=top_p)
+        else:
+            answer = self.generate(prompt, system_prompt=system_prompt, temperature=temperature, top_p=top_p)
+            yield answer
+
+    def _generate_ollama_stream(self, prompt: str, *, system_prompt: str, temperature: float, top_p: float | None = None):
+        import json as _json
+        base_url = self.settings.ollama_base_url.rstrip("/")
+        payload = {
+            "model": self.settings.ollama_model,
+            "prompt": f"/no_think\n\n{system_prompt}\n\n{prompt}",
+            "stream": True,
+            "think": False,
+            "keep_alive": getattr(self.settings, "ollama_keep_alive", "0s"),
+            "options": {
+                "temperature": temperature,
+                "top_p": self.settings.ollama_top_p if top_p is None else top_p,
+                "num_ctx": self.settings.ollama_num_ctx,
+                "num_predict": self.settings.ollama_num_predict,
+            },
+        }
+        try:
+            timeout = httpx.Timeout(
+                timeout=float(self.settings.ollama_timeout_seconds),
+                connect=5.0,
+                read=float(self.settings.ollama_timeout_seconds),
+                write=10.0,
+                pool=5.0,
+            )
+            with httpx.Client(timeout=timeout) as client:
+                with client.stream("POST", f"{base_url}/api/generate", json=payload) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = _json.loads(line)
+                            token = chunk.get("response", "")
+                            if token:
+                                yield token
+                            if chunk.get("done"):
+                                break
+                        except _json.JSONDecodeError:
+                            continue
+        except httpx.HTTPError as exc:
+            raise LLMGenerationError(
+                f"Ollama is not reachable at {self.settings.ollama_base_url} "
+                f"or model '{self.settings.ollama_model}' is not available. {exc}"
+            ) from exc
 
     def analyze_image(
         self,
@@ -162,8 +212,6 @@ class LLMService:
                 pool=5.0,
             )
             with httpx.Client(timeout=timeout) as client:
-                tags_response = client.get(f"{base_url}/api/tags")
-                tags_response.raise_for_status()
                 response = client.post(f"{base_url}/api/chat", json=payload)
                 response.raise_for_status()
                 data = response.json()

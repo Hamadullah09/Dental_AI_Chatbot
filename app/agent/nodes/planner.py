@@ -313,10 +313,17 @@ def rewrite_query(state: AgentState) -> AgentState:
     try:
         from app.services.rag import RAGService
         rag = RAGService()
-        llm_variants = rag.generate_llm_query_variants(question, settings.multi_query_max_variants)
-        for v in llm_variants:
-            if v and v.lower() not in {item.lower() for item in variants}:
-                variants.append(v)
+        from qdrant_client import QdrantClient
+        collections = rag.qdrant.get_collections()
+        has_docs = any(
+            col.name == rag.settings.qdrant_collection
+            for col in collections.collections
+        )
+        if has_docs:
+            llm_variants = rag.generate_llm_query_variants(question, min(2, settings.multi_query_max_variants))
+            for v in llm_variants:
+                if v and v.lower() not in {item.lower() for item in variants}:
+                    variants.append(v)
     except Exception:
         logger.debug("LLM query variant generation failed, using regex variants only")
 
