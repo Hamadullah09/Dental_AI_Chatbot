@@ -309,17 +309,40 @@ class AppointmentRead(BaseModel):
     patient_id: str
     dentist_id: str
     appointment_date: datetime
-    duration_minutes: int
+    appointment_end: datetime
+    duration_minutes: int = 30
     status: AppointmentStatus
-    notes: str | None
-    reason: str | None
-    rejection_reason: str | None
+    chief_complaint: str | None = None
+    reason: str | None = None
+    notes: str | None = None
+    rejection_reason: str | None = None
     created_at: datetime
     updated_at: datetime
     patient: Optional["UserRead"] = None
     dentist: Optional["DentistRead"] = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_model(cls, obj: "Appointment") -> "AppointmentRead":
+        duration = int((obj.appointment_end - obj.appointment_date).total_seconds() // 60)
+        return cls(
+            id=obj.id,
+            patient_id=obj.patient_id,
+            dentist_id=obj.dentist_id,
+            appointment_date=obj.appointment_date,
+            appointment_end=obj.appointment_end,
+            duration_minutes=duration,
+            status=obj.status,
+            chief_complaint=obj.chief_complaint,
+            reason=obj.chief_complaint,
+            notes=obj.notes,
+            rejection_reason=obj.cancellation_reason,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+            patient=obj.patient if hasattr(obj, "_sa_instance_state") and obj.patient else None,
+            dentist=obj.dentist if hasattr(obj, "_sa_instance_state") and obj.dentist else None,
+        )
 
 
 class AppointmentListParams(BaseModel):
@@ -408,7 +431,7 @@ class PrescriptionRead(BaseModel):
     instructions: str | None
     notes: str | None
     follow_up_date: datetime | None
-    attachments: list[str]
+    attachments: list[str] = []
     created_at: datetime
     updated_at: datetime
     patient: Optional["UserRead"] = None
@@ -416,6 +439,34 @@ class PrescriptionRead(BaseModel):
     appointment: Optional["AppointmentRead"] = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_model(cls, obj: "Prescription") -> "PrescriptionRead":
+        def _split(val: str | None) -> list[str]:
+            if not val:
+                return []
+            return [v.strip() for v in val.split(",") if v.strip()]
+
+        return cls(
+            id=obj.id,
+            patient_id=obj.patient_id,
+            dentist_id=obj.dentist_id,
+            appointment_id=obj.appointment_id,
+            diagnosis=obj.diagnosis,
+            medicines=obj.medicines,
+            dosage=obj.dosage,
+            frequency=obj.frequency,
+            duration=obj.duration,
+            instructions=obj.instructions,
+            notes=obj.notes,
+            follow_up_date=obj.follow_up_date,
+            attachments=_split(obj.attachment_path) if hasattr(obj, "attachment_path") else [],
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+            patient=obj.patient if hasattr(obj, "_sa_instance_state") and obj.patient else None,
+            dentist=obj.dentist if hasattr(obj, "_sa_instance_state") and obj.dentist else None,
+            appointment=obj.appointment if hasattr(obj, "_sa_instance_state") and obj.appointment else None,
+        )
 
 
 class PrescriptionSearchResult(BaseModel):
@@ -438,7 +489,7 @@ class DentalRecordBase(BaseModel):
     reports: list[str] = []
     images: list[str] = []
     notes: str | None = None
-    follow_up_records: str | None = None
+    follow_up_date: datetime | None = None
 
 
 class DentalRecordCreate(DentalRecordBase):
@@ -456,30 +507,60 @@ class DentalRecordUpdate(BaseModel):
     reports: list[str] | None = None
     images: list[str] | None = None
     notes: str | None = None
-    follow_up_records: str | None = None
+    follow_up_date: datetime | None = None
 
 
 class DentalRecordRead(BaseModel):
     id: str
     patient_id: str
     dentist_id: str | None
+    appointment_id: str | None = None
     previous_problems: str | None
     diagnoses: str | None
     treatments: str | None
     surgeries: str | None
     allergies: str | None
     medications: str | None
-    xrays: list[str]
-    reports: list[str]
-    images: list[str]
+    xrays: list[str] = []
+    reports: list[str] = []
+    images: list[str] = []
     notes: str | None
-    follow_up_records: str | None
+    follow_up_date: datetime | None = None
     created_at: datetime
     updated_at: datetime
     patient: Optional["UserRead"] = None
     dentist: Optional["DentistRead"] = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_model(cls, obj: "DentalRecord") -> "DentalRecordRead":
+        def _split(val: str | None) -> list[str]:
+            if not val:
+                return []
+            return [v.strip() for v in val.split(",") if v.strip()]
+
+        return cls(
+            id=obj.id,
+            patient_id=obj.patient_id,
+            dentist_id=obj.dentist_id,
+            appointment_id=obj.appointment_id if hasattr(obj, "appointment_id") else None,
+            previous_problems=obj.previous_problems,
+            diagnoses=obj.diagnoses,
+            treatments=obj.treatments,
+            surgeries=obj.surgeries,
+            allergies=obj.allergies,
+            medications=obj.medications,
+            xrays=_split(obj.xrays_path) if hasattr(obj, "xrays_path") else [],
+            reports=_split(obj.reports_path) if hasattr(obj, "reports_path") else [],
+            images=_split(obj.images_path) if hasattr(obj, "images_path") else [],
+            notes=obj.notes,
+            follow_up_date=obj.follow_up_date,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+            patient=obj.patient if hasattr(obj, "_sa_instance_state") and obj.patient else None,
+            dentist=obj.dentist if hasattr(obj, "_sa_instance_state") and obj.dentist else None,
+        )
 
 
 class UserSettingsBase(BaseModel):

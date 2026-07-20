@@ -68,7 +68,7 @@ def search_appointments(
     appointments = query.order_by(Appointment.appointment_date.desc()).offset(offset).limit(params.limit).all()
 
     return AppointmentSearchResult(
-        appointments=[AppointmentRead.model_validate(a) for a in appointments],
+        appointments=[AppointmentRead.from_orm_model(a) for a in appointments],
         total=total,
         page=params.page,
         limit=params.limit,
@@ -96,7 +96,7 @@ def get_upcoming_appointments(
             query = query.filter(Appointment.dentist_id == dentist.id)
 
     appointments = query.order_by(Appointment.appointment_date).limit(limit).all()
-    return [AppointmentRead.model_validate(a) for a in appointments]
+    return [AppointmentRead.from_orm_model(a) for a in appointments]
 
 
 @router.get("/{appointment_id}", response_model=AppointmentRead)
@@ -116,7 +116,7 @@ def get_appointment(
         if not dentist or appointment.dentist_id != dentist.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this appointment")
 
-    return AppointmentRead.model_validate(appointment)
+    return AppointmentRead.from_orm_model(appointment)
 
 
 @router.post("", response_model=AppointmentRead, status_code=status.HTTP_201_CREATED)
@@ -135,7 +135,8 @@ def create_appointment(
         raise HTTPException(status_code=400, detail="Dentist is not accepting appointments")
 
     appointment_date = payload.appointment_date
-    appointment_end = appointment_date + timedelta(minutes=30)
+    duration = payload.duration_minutes or 30
+    appointment_end = appointment_date + timedelta(minutes=duration)
 
     conflict = db.query(Appointment).filter(
         Appointment.dentist_id == payload.dentist_id,
@@ -152,14 +153,15 @@ def create_appointment(
         dentist_id=payload.dentist_id,
         appointment_date=appointment_date,
         appointment_end=appointment_end,
-        chief_complaint=payload.chief_complaint,
+        chief_complaint=payload.reason,
+        notes=payload.notes,
         status=AppointmentStatus.pending,
     )
     db.add(appointment)
     db.commit()
     db.refresh(appointment)
 
-    return AppointmentRead.model_validate(appointment)
+    return AppointmentRead.from_orm_model(appointment)
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentRead)
@@ -188,7 +190,7 @@ def update_appointment(
     db.commit()
     db.refresh(appointment)
 
-    return AppointmentRead.model_validate(appointment)
+    return AppointmentRead.from_orm_model(appointment)
 
 
 @router.patch("/{appointment_id}/status", response_model=AppointmentRead)
@@ -238,7 +240,7 @@ def update_appointment_status(
     db.commit()
     db.refresh(appointment)
 
-    return AppointmentRead.model_validate(appointment)
+    return AppointmentRead.from_orm_model(appointment)
 
 
 @router.post("/{appointment_id}/reschedule", response_model=AppointmentRead)
@@ -291,7 +293,7 @@ def reschedule_appointment(
     db.commit()
     db.refresh(appointment)
 
-    return AppointmentRead.model_validate(appointment)
+    return AppointmentRead.from_orm_model(appointment)
 
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)

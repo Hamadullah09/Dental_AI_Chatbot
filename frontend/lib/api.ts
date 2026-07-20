@@ -306,14 +306,16 @@ export async function downloadDatasetReviewCsv(token: string) {
   return response.blob();
 }
 
-export async function getDentists(params?: { name?: string; specialization?: string; clinic?: string; token?: string }) {
+export async function getDentists(params?: { name?: string; specialization?: string; clinic?: string; token?: string; page?: number; limit?: number }) {
   const query = new URLSearchParams();
   if (params?.name) query.set("query", params.name);
   if (params?.specialization) query.set("specialization", params.specialization);
   if (params?.clinic) query.set("clinic", params.clinic);
+  query.set("page", String(params?.page || 1));
+  query.set("limit", String(params?.limit || 50));
   const qs = query.toString();
-  const result = await request<{ dentists: Dentist[]; total: number }>(`/dentists${qs ? `?${qs}` : ""}`, { token: params?.token });
-  return result.dentists;
+  const result = await request<{ dentists: Dentist[]; total: number; total_pages: number }>(`/dentists${qs ? `?${qs}` : ""}`, { token: params?.token });
+  return { dentists: result.dentists, total: result.total, totalPages: result.total_pages };
 }
 
 export function getDentist(dentistId: string, token: string) {

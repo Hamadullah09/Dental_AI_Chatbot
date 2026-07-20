@@ -37,8 +37,8 @@ function DentistsContent() {
     try {
       setLoading(true);
       setError("");
-      const data = await getDentists({ token: token!, specialization: specFilter || undefined });
-      setDentists(data);
+      const data = await getDentists({ token: token!, specialization: specFilter || undefined, limit: 50 });
+      setDentists(data.dentists);
     } catch (e: any) {
       setError(e.message || "Failed to load dentists");
     } finally {

@@ -65,7 +65,7 @@ function AppointmentsContent() {
       const [all, up, docs] = await Promise.all([
         getAppointments(token!),
         getUpcomingAppointments(token!).catch(() => []),
-        getDentists({ token: token! }).catch(() => []),
+        getDentists({ token: token!, limit: 50 }).then((r) => r.dentists).catch(() => []),
       ]);
       setAppointments(all);
       setUpcoming(up);

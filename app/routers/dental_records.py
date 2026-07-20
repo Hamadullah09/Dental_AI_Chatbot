@@ -263,7 +263,7 @@ def search_dental_records(
     records = query.order_by(DentalRecord.created_at.desc()).offset(offset).limit(params.limit).all()
 
     return DentalRecordSearchResult(
-        records=[DentalRecordRead.model_validate(r) for r in records],
+        records=[DentalRecordRead.from_orm_model(r) for r in records],
         total=total,
         page=params.page,
         limit=params.limit,
@@ -288,7 +288,7 @@ def get_dental_record(
         if not dentist or record.dentist_id != dentist.id:
             raise HTTPException(status_code=403, detail="Not authorized")
 
-    return DentalRecordRead.model_validate(record)
+    return DentalRecordRead.from_orm_model(record)
 
 
 @router.post("", response_model=DentalRecordRead, status_code=status.HTTP_201_CREATED)
@@ -323,18 +323,17 @@ def create_dental_record(
         surgeries=payload.surgeries,
         allergies=payload.allergies,
         medications=payload.medications,
-        xrays=payload.xrays,
-        reports=payload.reports,
-        images=payload.images,
+        xrays_path=",".join(payload.xrays) if payload.xrays else None,
+        reports_path=",".join(payload.reports) if payload.reports else None,
+        images_path=",".join(payload.images) if payload.images else None,
         notes=payload.notes,
         follow_up_date=payload.follow_up_date,
-        follow_up_records=payload.follow_up_records,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
 
-    return DentalRecordRead.model_validate(record)
+    return DentalRecordRead.from_orm_model(record)
 
 
 @router.patch("/{record_id}", response_model=DentalRecordRead)
@@ -356,14 +355,18 @@ def update_dental_record(
         raise HTTPException(status_code=403, detail="Patients cannot edit dental records")
 
     update_data = payload.model_dump(exclude_unset=True)
+    field_map = {"xrays": "xrays_path", "reports": "reports_path", "images": "images_path"}
     for key, value in update_data.items():
-        setattr(record, key, value)
+        db_key = field_map.get(key, key)
+        if db_key != key and isinstance(value, list):
+            value = ",".join(value) if value else None
+        setattr(record, db_key, value)
 
     record.updated_at = datetime.now()
     db.commit()
     db.refresh(record)
 
-    return DentalRecordRead.model_validate(record)
+    return DentalRecordRead.from_orm_model(record)
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)

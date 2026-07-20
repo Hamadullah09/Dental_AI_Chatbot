@@ -24,6 +24,8 @@ import {
   Sparkles,
   Star,
   Stethoscope,
+  FileText,
+  ClipboardList,
   Trash2,
   X,
 } from "lucide-react";
@@ -247,6 +249,8 @@ export function Sidebar({
     { icon: Rows3, label: "Clinical library", modal: "library" },
     { icon: Clock3, label: "Appointments", path: "/appointments" },
     { icon: Stethoscope, label: "Dentists", path: "/dentists" },
+    { icon: FileText, label: "Prescriptions", path: "/prescriptions" },
+    { icon: ClipboardList, label: "Dental Records", path: "/dental-records" },
   ];
 
   const accountLinks: NavItem[] = [

@@ -281,7 +281,7 @@ def search_prescriptions(
     prescriptions = query.order_by(Prescription.created_at.desc()).offset(offset).limit(params.limit).all()
 
     return PrescriptionSearchResult(
-        prescriptions=[PrescriptionRead.model_validate(p) for p in prescriptions],
+        prescriptions=[PrescriptionRead.from_orm_model(p) for p in prescriptions],
         total=total,
         page=params.page,
         limit=params.limit,
@@ -306,7 +306,7 @@ def get_prescription(
         if not dentist or prescription.dentist_id != dentist.id:
             raise HTTPException(status_code=403, detail="Not authorized")
 
-    return PrescriptionRead.model_validate(prescription)
+    return PrescriptionRead.from_orm_model(prescription)
 
 
 @router.post("", response_model=PrescriptionRead, status_code=status.HTTP_201_CREATED)
@@ -347,12 +347,13 @@ def create_prescription(
         instructions=payload.instructions,
         notes=payload.notes,
         follow_up_date=payload.follow_up_date,
+        attachment_path=",".join(payload.attachments) if payload.attachments else None,
     )
     db.add(prescription)
     db.commit()
     db.refresh(prescription)
 
-    return PrescriptionRead.model_validate(prescription)
+    return PrescriptionRead.from_orm_model(prescription)
 
 
 @router.patch("/{prescription_id}", response_model=PrescriptionRead)
@@ -372,6 +373,9 @@ def update_prescription(
             raise HTTPException(status_code=403, detail="Not authorized")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "attachments" in update_data:
+        att = update_data.pop("attachments")
+        update_data["attachment_path"] = ",".join(att) if att else None
     for key, value in update_data.items():
         setattr(prescription, key, value)
 
@@ -379,7 +383,7 @@ def update_prescription(
     db.commit()
     db.refresh(prescription)
 
-    return PrescriptionRead.model_validate(prescription)
+    return PrescriptionRead.from_orm_model(prescription)
 
 
 @router.delete("/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -459,4 +463,4 @@ def reissue_prescription(
     db.commit()
     db.refresh(new_prescription)
 
-    return PrescriptionRead.model_validate(new_prescription)
+    return PrescriptionRead.from_orm_model(new_prescription)

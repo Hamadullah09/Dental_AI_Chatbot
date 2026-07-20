@@ -222,7 +222,7 @@ def search_dentists_v2(
                 Dentist.biography.ilike(search),
                 Dentist.clinical_interests.ilike(search),
                 Dentist.research_interests.ilike(search),
-                Dentist.qualifications.ilike(search),
+                Dentist.qualification.ilike(search),
                 Dentist.specialization.ilike(search),
             )
         )
