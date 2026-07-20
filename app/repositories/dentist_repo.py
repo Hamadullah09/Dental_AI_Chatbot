@@ -78,12 +78,18 @@ class DentistRepository:
         return dentists, total
 
     def find_existing(self, profile_url: str | None = None, name: str | None = None) -> Dentist | None:
+        total = self.db.query(func.count(Dentist.id)).scalar() or 0
         if profile_url:
             existing = self.get_by_profile_url(profile_url)
             if existing:
+                logger.debug("find_existing matched by profile_url=%r -> id=%s name=%s", profile_url, existing.id, existing.full_name)
                 return existing
         if name:
-            return self.get_by_name(name)
+            existing = self.get_by_name(name)
+            if existing:
+                logger.debug("find_existing matched by name=%r -> id=%s", name, existing.id)
+                return existing
+        logger.debug("find_existing: no match for url=%r name=%r (total=%d)", profile_url, name, total)
         return None
 
     def upsert_from_scraped(self, data: dict) -> Dentist:

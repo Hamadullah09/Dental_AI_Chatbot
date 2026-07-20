@@ -137,7 +137,8 @@ class DentistSyncService:
         start = time.monotonic()
         result = SyncResult()
 
-        logger.info("Starting dentist synchronization (force=%s)", force)
+        pre_count = self.db.execute(text("SELECT count(*) FROM dentists")).scalar()
+        logger.info("Starting dentist synchronization (force=%s) — DB has %d dentists", force, pre_count)
 
         try:
             crawl_result = self.crawler.crawl_all()
