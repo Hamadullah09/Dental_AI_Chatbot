@@ -292,7 +292,7 @@ class AppointmentBase(BaseModel):
 
 
 class AppointmentCreate(AppointmentBase):
-    pass
+    patient_id: str | None = None
 
 
 class AppointmentUpdate(BaseModel):
