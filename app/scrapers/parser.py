@@ -164,9 +164,11 @@ class ProfileParser:
             specialty=listing.specialty or "Dentistry",
         )
 
-        name_tag = soup.select_one("h1, h2.doctor-name, .profile-name, [class*='name']")
+        name_tag = soup.select_one("h1, h2.doctor-name, .profile-name")
         if name_tag:
-            profile.name = self._clean_text(name_tag.get_text()) or profile.name
+            extracted = self._clean_text(name_tag.get_text())
+            if extracted and len(extracted.split()) >= 2 and "contact" not in extracted.lower():
+                profile.name = extracted
 
         img_tags = soup.select("img[src*='Faculty'], img[src*='Attachments'], img.profile-image, img[class*='doctor']")
         for img in img_tags:
