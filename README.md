@@ -1,7 +1,5 @@
 # Dental AI Chatbot - Production Deployment Guide
 
-## Office PC Setup (RTX 5060Ti)
-
 ---
 
 ## Table of Contents
