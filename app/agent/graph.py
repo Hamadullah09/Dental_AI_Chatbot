@@ -20,12 +20,63 @@ def retrieve_chunks(state: AgentState) -> AgentState:
     settings = get_settings()
 
     try:
-        from app.services.rag import RAGService
+        from app.services.rag import RAGService, merge_chunks, rerank_chunks, RetrievedChunk, SourceCitation
         rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
+        variants = state.query_variants or [query]
 
-        chunks = rag.retrieve(query, top_k=top_k, filters=state.filters)
+        rag_mode = settings.rag_mode
+
+        if rag_mode == "multi_query" and len(variants) > 1:
+            all_chunks = []
+            seen_keys = set()
+            for variant in variants[:settings.multi_query_max_variants]:
+                variant_chunks = rag.retrieve(variant, top_k=top_k, filters=state.filters)
+                for chunk in variant_chunks:
+                    key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        all_chunks.append(chunk)
+            merged = merge_chunks(all_chunks)
+            reranked = rerank_chunks(query, merged)
+        elif rag_mode == "corrective" or rag_mode == "self_rag":
+            initial = rag.retrieve(query, top_k=top_k, filters=state.filters)
+            from app.services.rag import retrieval_confidence
+            if retrieval_confidence(initial) >= settings.corrective_confidence_threshold:
+                reranked = initial
+            else:
+                all_chunks = list(initial)
+                seen_keys = set()
+                for chunk in initial:
+                    key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+                    seen_keys.add(key)
+                for variant in variants[:settings.multi_query_max_variants]:
+                    variant_chunks = rag.retrieve(variant, top_k=top_k, filters=state.filters)
+                    for chunk in variant_chunks:
+                        key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            all_chunks.append(chunk)
+                merged = merge_chunks(all_chunks)
+                reranked = rerank_chunks(query, merged)
+        elif rag_mode == "hyde":
+            initial = rag.retrieve(query, top_k=top_k, filters=state.filters)
+            from app.services.rag import retrieval_confidence
+            if retrieval_confidence(initial) >= settings.hyde_confidence_threshold:
+                reranked = initial
+            else:
+                hypothetical = rag.generate_hypothetical_passage(query)
+                if hypothetical:
+                    hyde_chunks = rag.retrieve(hypothetical, top_k=top_k, filters=state.filters)
+                    all_chunks = initial + hyde_chunks
+                    merged = merge_chunks(all_chunks)
+                    reranked = rerank_chunks(query, merged)
+                else:
+                    reranked = initial
+        else:
+            reranked = rag.retrieve(query, top_k=top_k, filters=state.filters)
+
         state.retrieved_chunks = [
             {
                 "text": chunk.text,
@@ -41,11 +92,11 @@ def retrieve_chunks(state: AgentState) -> AgentState:
                 "keyword_score": chunk.keyword_score,
                 "rerank_score": chunk.rerank_score,
             }
-            for chunk in chunks
+            for chunk in reranked
         ]
 
         duration_ms = (time.perf_counter() - start) * 1000
-        state.add_trace("hybrid_retriever", "completed", f"{len(chunks)} chunks retrieved", duration_ms)
+        state.add_trace("hybrid_retriever", "completed", f"{len(reranked)} chunks (mode={rag_mode})", duration_ms)
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
@@ -76,7 +127,7 @@ def retrieve_visuals(state: AgentState) -> AgentState:
         top_k = state.top_k or settings.retrieval_top_k
 
         retrieved_chunks_for_visuals = []
-        for chunk_dict in state.reranked_chunks[:top_k]:
+        for chunk_dict in state.retrieved_chunks[:top_k]:
             citation_data = chunk_dict.get("citation", {})
             retrieved_chunks_for_visuals.append(RetrievedChunk(
                 text=chunk_dict.get("text", ""),
@@ -132,14 +183,23 @@ def retrieve_visuals(state: AgentState) -> AgentState:
 
 def rerank_results(state: AgentState) -> AgentState:
     start = time.perf_counter()
+    settings = get_settings()
 
     def _score_chunk(chunk: dict) -> float:
         vector = chunk.get("vector_score", 0)
         keyword = chunk.get("keyword_score", 0)
         rerank = chunk.get("rerank_score", 0)
+        if settings.enable_bge_reranker and rerank > 0:
+            return rerank
         return rerank * 0.4 + vector * 0.35 + keyword * 0.25
 
     state.reranked_chunks = sorted(state.retrieved_chunks, key=_score_chunk, reverse=True)
+
+    min_relevance = settings.retrieval_min_relevance_score
+    state.reranked_chunks = [
+        c for c in state.reranked_chunks
+        if c.get("rerank_score", 0) >= min_relevance * 0.5 or c.get("vector_score", 0) >= 0.3
+    ]
 
     def _score_visual(visual: dict) -> float:
         return visual.get("score", 0) or 0
@@ -164,6 +224,50 @@ def generate_answer(state: AgentState) -> AgentState:
         answer = llm.generate(user_prompt, system_prompt=system_prompt)
         state.answer = answer
         state.answer_mode = "rag_grounded" if state.retrieved_chunks else "general_fallback"
+
+        try:
+            from app.services.rag import RAGService, contains_prescribing_language, needs_safety_note
+            rag = RAGService()
+            chunks_for_check = []
+            for chunk_dict in state.reranked_chunks[:5]:
+                from app.schemas import SourceCitation
+                citation_data = chunk_dict.get("citation", {})
+                chunks_for_check.append(type('RetrievedChunk', (), {
+                    'text': chunk_dict.get("text", ""),
+                    'citation': SourceCitation(
+                        source_type=citation_data.get("source_type", "pdf"),
+                        document_id=citation_data.get("document_id"),
+                        document_name=citation_data.get("document_name", "Unknown"),
+                        page_number=citation_data.get("page_number"),
+                        chunk_index=citation_data.get("chunk_index"),
+                        score=citation_data.get("score"),
+                    ),
+                    'metadata': {},
+                    'vector_score': chunk_dict.get("vector_score", 0),
+                    'keyword_score': chunk_dict.get("keyword_score", 0),
+                    'rerank_score': chunk_dict.get("rerank_score", 0),
+                })())
+
+            check_result = rag.self_check_answer(state.question, state.answer, chunks_for_check)
+
+            if not check_result.get("passed"):
+                reasons = check_result.get("reasons", [])
+                if "prescribing_language" in reasons:
+                    state.answer = (
+                        "I cannot provide specific medication prescriptions or dosages. "
+                        "Please consult a licensed dental professional for prescription advice.\n\n"
+                        + state.answer
+                    )
+                if "missing_safety_note" in reasons:
+                    state.answer += (
+                        "\n\n**Safety Note:** This is educational information only. "
+                        "For symptoms, diagnosis, or treatment decisions, please consult a licensed dentist."
+                    )
+                if "ungrounded" in reasons and state.retrieved_chunks:
+                    state.answer_mode = "partially_grounded"
+                    state.add_trace("self_check", "flagged", f"Reasons: {reasons}")
+        except Exception:
+            pass
 
         for chunk in state.reranked_chunks[:5]:
             citation = chunk.get("citation", {})
@@ -209,12 +313,39 @@ def _build_system_prompt(state: AgentState) -> str:
         "Never provide medical advice that replaces professional dental consultation. "
         "Include the medical disclaimer at the end of every response.\n\n"
         f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
+        "Response Guidelines:\n"
+        "- Start with a direct, concise answer in 1-3 sentences\n"
+        "- Use **bold** for important dental terms, symptoms, and warnings\n"
+        "- Use markdown headings (##) for major sections\n"
+        "- Use bullet points for lists of symptoms, causes, or steps\n"
+        "- Keep paragraphs short (2-3 sentences max)\n"
+        "- Aim for 200-500 words for educational questions\n"
+        "- For simple questions, keep answers brief\n"
+        "- Always include [Source N] citations for factual claims\n"
+        "- End with appropriate safety/consultation note\n\n"
     )
 
     if state.intent == "emergency":
         base += "IMPORTANT: This appears to be an emergency query. Emphasize seeking immediate professional dental care.\n\n"
     elif state.intent == "visual":
         base += "The user is asking about visual content. Reference any provided images, diagrams, or figures.\n\n"
+    elif state.intent == "symptom":
+        base += (
+            "The user is asking about symptoms. Provide clear explanations of possible causes, "
+            "when to see a dentist, and practical self-care tips. Always recommend professional evaluation.\n\n"
+        )
+    elif state.intent == "treatment":
+        base += (
+            "The user is asking about dental treatments. Explain procedures, expected outcomes, "
+            "recovery information, and cost considerations where relevant.\n\n"
+        )
+
+    try:
+        from app.services.rag import normalize_user_role, role_behavior_instruction
+        role = normalize_user_role(state.user_role)
+        base += role_behavior_instruction(state.user_role) + "\n\n"
+    except Exception:
+        pass
 
     if state.context_text:
         base += f"Context from dental knowledge base:\n{state.context_text}\n\n"

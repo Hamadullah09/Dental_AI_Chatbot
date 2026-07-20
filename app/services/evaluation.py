@@ -105,3 +105,130 @@ class EvaluationPipeline:
 
 
 evaluation_pipeline = EvaluationPipeline()
+
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class EvaluationCase:
+    question: str
+    expected_terms: list[str] = field(default_factory=list)
+    expected_sources: list[str] = field(default_factory=list)
+    filters: dict[str, Any] | None = None
+    case_type: str = "general"
+    expect_visual: bool = False
+    expected_visual_id: str | None = None
+    expected_document_id: str | None = None
+    expected_page_number: int | None = None
+    expected_chunk_index: int | None = None
+
+
+@dataclass
+class EvaluationResult:
+    question: str
+    answer: str
+    passed: bool
+    term_recall: float = 0.0
+    has_citation: bool = False
+    source_match: bool = False
+    top5_relevance: bool = False
+    citation_accuracy: bool = False
+    visual_relevance: bool = False
+    answer_faithfulness: bool = False
+    missing_terms: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+    visuals: list[str] = field(default_factory=list)
+    case_type: str = "general"
+
+
+def load_evaluation_cases(path: Path) -> list[EvaluationCase]:
+    cases: list[EvaluationCase] = []
+    if not path.exists():
+        return cases
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            cases.append(
+                EvaluationCase(
+                    question=data.get("question", ""),
+                    expected_terms=data.get("expected_terms", []),
+                    expected_sources=data.get("expected_sources", []),
+                    filters=data.get("filters"),
+                    case_type=data.get("case_type", "general"),
+                    expect_visual=data.get("expect_visual", False),
+                    expected_visual_id=data.get("expected_visual_id"),
+                    expected_document_id=data.get("expected_document_id"),
+                    expected_page_number=data.get("expected_page_number"),
+                    expected_chunk_index=data.get("expected_chunk_index"),
+                )
+            )
+    return cases
+
+
+def evaluate_cases(service, cases: list[EvaluationCase], top_k: int = 5) -> list[EvaluationResult]:
+    results: list[EvaluationResult] = []
+    for case in cases:
+        try:
+            answer, sources = service.answer(case.question, top_k=top_k, filters=case.filters)
+        except Exception:
+            answer = ""
+            sources = []
+
+        answer_lower = answer.lower()
+        retrieved_text = answer_lower
+
+        missing_terms = [term for term in case.expected_terms if term not in retrieved_text]
+        term_recall = 1.0 if not case.expected_terms else (len(case.expected_terms) - len(missing_terms)) / len(case.expected_terms)
+
+        source_names = [getattr(s, "document_name", str(s)) for s in sources]
+        source_names_l = [name.lower() for name in source_names]
+        source_match = not case.expected_sources or any(
+            expected in source_name
+            for expected in case.expected_sources
+            for source_name in source_names_l
+        )
+
+        has_citation = bool(sources)
+
+        passed = term_recall >= 0.8 and source_match
+
+        results.append(
+            EvaluationResult(
+                question=case.question,
+                answer=answer,
+                passed=passed,
+                term_recall=term_recall,
+                has_citation=has_citation,
+                source_match=source_match,
+                missing_terms=missing_terms,
+                sources=source_names,
+                case_type=case.case_type,
+            )
+        )
+    return results
+
+
+def summarize_results(results: list[EvaluationResult]) -> dict[str, Any]:
+    if not results:
+        return {"total": 0, "passed": 0, "pass_rate": 0.0}
+
+    total = len(results)
+    passed = sum(1 for r in results if r.passed)
+    avg_term_recall = sum(r.term_recall for r in results) / total
+    citation_rate = sum(1 for r in results if r.has_citation) / total
+
+    return {
+        "total": total,
+        "passed": passed,
+        "pass_rate": passed / total,
+        "avg_term_recall": avg_term_recall,
+        "citation_rate": citation_rate,
+    }

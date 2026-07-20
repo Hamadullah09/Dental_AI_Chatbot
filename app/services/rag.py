@@ -562,7 +562,34 @@ class RAGService:
         threshold = self.settings.visual_min_relevance_score
         if wants_visual_answer(question):
             threshold *= 0.75
-        return [visual for visual in reranked if visual.rerank_score >= threshold][:top_k]
+        filtered = [visual for visual in reranked if visual.rerank_score >= threshold][:top_k]
+
+        if not filtered and reranked:
+            relaxed_threshold = threshold * 0.7
+            filtered = [visual for visual in reranked if visual.rerank_score >= relaxed_threshold][:top_k]
+
+        if not filtered and not chunks:
+            try:
+                db = SessionLocal()
+                try:
+                    broad_visuals = (
+                        db.query(DocumentVisual)
+                        .filter(DocumentVisual.quality_score >= 0.5)
+                        .order_by(DocumentVisual.quality_score.desc())
+                        .limit(top_k * 2)
+                        .all()
+                    )
+                finally:
+                    db.close()
+                for row in broad_visuals:
+                    visual = self.visual_row_to_retrieved(row, parse_related_chunk_ids(row.related_chunk_ids))
+                    visual.vector_score = 0.05
+                    filtered.append(visual)
+                filtered = filtered[:top_k]
+            except Exception:
+                logger.debug("rag.visual_fallback.failed")
+
+        return filtered
 
     def visual_keyword_search(self, question: str, limit: int, filters: dict) -> list[RetrievedVisual]:
         query_tokens = bm25_tokens(question)

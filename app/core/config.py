@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     retrieval_min_results: int = 3
     enable_keyword_search: bool = True
     keyword_search_scan_limit: int = 4000
-    rag_mode: str = "simple"
+    rag_mode: str = "multi_query"
     retrieval_min_relevance_score: float = 1.1
     allow_general_fallback: bool = True
     enable_memory: bool = True
