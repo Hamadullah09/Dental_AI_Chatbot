@@ -217,6 +217,28 @@ class Settings(BaseSettings):
         "It does not replace diagnosis, treatment planning, or emergency care from a licensed dentist."
     )
 
+    chatbot_name: str = "DentalGPT"
+    chatbot_tagline: str = "Your AI-powered dental health assistant"
+    chatbot_welcome_message: str = "How can I help?"
+    chatbot_input_placeholder: str = "Ask anything about dental care..."
+    chatbot_suggested_questions: str = (
+        "What is tooth decay?|Explain gingivitis in simple words|How often should I visit the dentist?|What are the signs of oral cancer?"
+    )
+    chatbot_disclaimer_banner: str = (
+        "Dental AI is for education and clinical decision support only. "
+        "It does not replace diagnosis, treatment planning, or emergency care from a licensed dentist."
+    )
+    chatbot_typing_message: str = "Thinking..."
+    chatbot_searching_message: str = "Searching knowledge base..."
+    chatbot_generating_message: str = "Generating answer..."
+    chatbot_error_message: str = "Something went wrong. Please try again."
+    chatbot_network_error_message: str = "Could not reach the server. Please check your connection."
+    chatbot_rate_limit_message: str = "Too many requests. Please wait a moment and try again."
+    chatbot_empty_message: str = "Please enter a question."
+    chatbot_no_sources_message: str = "No sources found for this query."
+    chatbot_thinking_messages: str = "Searching knowledge base...|Analyzing your question...|Finding relevant information..."
+    chatbot_export_filename_prefix: str = "dental-chat"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property

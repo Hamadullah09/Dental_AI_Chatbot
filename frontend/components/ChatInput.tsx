@@ -3,6 +3,7 @@
 import React, { useRef, ChangeEvent, KeyboardEvent } from "react";
 import { Globe2, Paperclip, Mic, ArrowUp, X, FileText, Square } from "lucide-react";
 import type { DocumentItem } from "@/lib/types";
+import { useChatbotConfig } from "@/lib/chatbot-config";
 
 interface ChatInputProps {
   value: string;
@@ -37,6 +38,7 @@ export function ChatInput({
   searchWeb,
   onToggleSearchWeb,
 }: ChatInputProps) {
+  const config = useChatbotConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -117,7 +119,7 @@ export function ChatInput({
                 adjustHeight();
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything about dental care..."
+              placeholder={config.input_placeholder}
               className="max-h-40 min-h-[36px] w-full resize-none bg-transparent py-1.5 text-[15px] leading-6 text-dental-textPrimary placeholder:text-dental-textSecondary focus:outline-none scrollbar-hide"
             />
           </div>
@@ -191,7 +193,7 @@ export function ChatInput({
       </form>
       <div className="text-center mt-2">
         <p className="text-[10px] text-dental-textSecondary">
-          Dental AI is for education and clinical decision support only. It does not replace diagnosis, treatment planning, or emergency care from a licensed dentist.
+          {config.disclaimer_banner}
         </p>
       </div>
     </div>

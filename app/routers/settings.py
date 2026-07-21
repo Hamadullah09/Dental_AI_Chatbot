@@ -16,6 +16,8 @@ from app.schemas import (
     HelpArticleRead,
     HelpArticleUpdate,
     HelpCategoryRead,
+    UserPreferencesRead,
+    UserPreferencesUpdate,
     UserSettingsRead,
     UserSettingsUpdate,
 )
@@ -392,3 +394,46 @@ def update_ticket(
     db.refresh(ticket)
 
     return ContactSupportRead.model_validate(ticket)
+
+
+@router.get("/preferences", response_model=UserPreferencesRead)
+def get_user_preferences(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserPreferencesRead:
+    from app.services.memory import MemoryService
+    svc = MemoryService()
+    context = svc.get_memory_context(current_user.id, db)
+    prefs = context.get("preferences", {})
+    return UserPreferencesRead(
+        preferred_language=prefs.get("preferred_language", "en"),
+        simplify_for_patient=prefs.get("simplify_for_patient", False),
+        preferred_specialty=prefs.get("preferred_specialty", ""),
+        frequently_asked_topics=context.get("recent_topics", []),
+        recent_sessions=context.get("recent_sessions", []),
+    )
+
+
+@router.patch("/preferences", response_model=UserPreferencesRead)
+def update_user_preferences(
+    payload: UserPreferencesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserPreferencesRead:
+    from app.services.memory import MemoryService
+    svc = MemoryService()
+    svc.update_memory(
+        current_user.id,
+        preferred_language=payload.preferred_language,
+        simplify_for_patient=payload.simplify_for_patient,
+        preferred_specialty=payload.preferred_specialty,
+    )
+    context = svc.get_memory_context(current_user.id, db)
+    prefs = context.get("preferences", {})
+    return UserPreferencesRead(
+        preferred_language=prefs.get("preferred_language", "en"),
+        simplify_for_patient=prefs.get("simplify_for_patient", False),
+        preferred_specialty=prefs.get("preferred_specialty", ""),
+        frequently_asked_topics=context.get("recent_topics", []),
+        recent_sessions=context.get("recent_sessions", []),
+    )

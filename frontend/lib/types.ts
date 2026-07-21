@@ -55,6 +55,11 @@ export type Message = {
   sources: SourceCitation[];
   visuals?: VisualCitation[];
   created_at: string;
+  confidence_level?: "high" | "medium" | "low";
+  confidence_score?: number;
+  explainability_notes?: string[];
+  follow_up_suggestions?: string[];
+  intent?: string;
 };
 
 export type ChatSession = {
@@ -254,4 +259,15 @@ export type SupportTicket = {
   admin_response: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type EvaluationMetricsResponse = {
+  total_queries: number;
+  avg_retrieval_latency_ms: number;
+  avg_llm_latency_ms: number;
+  citation_accuracy: number;
+  user_satisfaction: number;
+  hallucination_rate: number;
+  failed_retrievals: number;
+  mode_breakdown: Record<string, number>;
 };

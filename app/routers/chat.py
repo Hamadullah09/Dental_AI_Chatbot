@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.core.logging import get_logger, user_id_var
+from app.core.redis import RateLimiter
 from app.core.streaming import stream_chat_response
 from app.deps import get_current_user
 from app.models import ChatSession, Document, DocumentStatus, DocumentType, Feedback, Message, MessageRole, ReviewStatus, TrustLevel, User
@@ -20,6 +21,8 @@ import time
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["chat"])
+
+chat_rate_limiter = RateLimiter(prefix="ratelimit:chat")
 
 
 def ingest_user_document_background(document_id: str) -> None:
@@ -68,6 +71,13 @@ def chat(
     current_user: User = Depends(get_current_user),
 ) -> ChatResponse:
     user_id_var.set(current_user.id)
+
+    settings = get_settings()
+    if chat_rate_limiter.is_rate_limited(
+        f"user:{current_user.id}", settings.rate_limit_chat_per_minute
+    ):
+        raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
+
     start = time.perf_counter()
 
     question = payload.question.strip()
@@ -224,6 +234,12 @@ async def chat_stream(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     user_id_var.set(current_user.id)
+
+    settings = get_settings()
+    if chat_rate_limiter.is_rate_limited(
+        f"user:{current_user.id}", settings.rate_limit_chat_per_minute
+    ):
+        raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
 
     question = payload.question.strip()
     if not question:

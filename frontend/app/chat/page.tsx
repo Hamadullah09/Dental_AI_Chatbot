@@ -6,12 +6,14 @@ import { AppShell, useModal } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
 import { ChatWindow } from "@/components/ChatWindow";
 import { ChatInput } from "@/components/ChatInput";
-import { getChatDocument, sendChat, sendChatStream, uploadChatDocument } from "@/lib/api";
+import { getChatDocument, sendChat, sendChatStream, uploadChatDocument, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useChatbotConfig } from "@/lib/chatbot-config";
 import type { DocumentItem, Message } from "@/lib/types";
 
 function ChatContent() {
   const { token } = useAuth();
+  const config = useChatbotConfig();
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlSessionId = searchParams.get("session_id");
@@ -25,6 +27,7 @@ function ChatContent() {
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [thinkingMessage, setThinkingMessage] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [activeDocument, setActiveDocument] = useState<DocumentItem | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -35,6 +38,29 @@ function ChatContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const loadedSessionRef = useRef<string | null>(null);
+
+  function exportChat() {
+    if (messages.length === 0) {
+      setToast("No messages to export.");
+      return;
+    }
+    const lines = messages.map((m) => {
+      const role = m.role === "user" ? "You" : "DentalGPT";
+      const time = m.created_at
+        ? new Date(m.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "";
+      return `## ${role} - ${time}\n\n${m.role === "user" ? m.content : m.content}`;
+    });
+    const markdown = `# Dental Chat Export\n\n${lines.join("\n\n---\n\n")}`;
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${config.export_filename_prefix || "dental-chat"}-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setToast("Chat exported as Markdown.");
+  }
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -123,6 +149,14 @@ function ChatContent() {
       setToast("");
       setIsLoading(true);
 
+      const thinkingMessages = ["Searching knowledge base...", "Analyzing your question...", "Finding relevant information..."];
+      let thinkingIdx = 0;
+      setThinkingMessage(thinkingMessages[0]);
+      const thinkingInterval = setInterval(() => {
+        thinkingIdx = (thinkingIdx + 1) % thinkingMessages.length;
+        setThinkingMessage(thinkingMessages[thinkingIdx]);
+      }, 2500);
+
       try {
         if (fileToUpload) {
           setUploadProgress("Uploading PDF for grounded chat...");
@@ -146,6 +180,9 @@ function ChatContent() {
         }, token)) {
           if (event.type === "start" && event.session_id) {
             finalSessionId = event.session_id;
+          } else if (event.type === "intent") {
+            // Intent detected - update thinking message
+            setThinkingMessage(`Detected: ${event.intent.replace(/_/g, " ")}`);
           } else if (event.type === "content" && event.text) {
             accumulatedAnswer += event.text;
             setMessages((current) =>
@@ -160,6 +197,20 @@ function ChatContent() {
             finalVisuals = event.visuals || [];
           } else if (event.type === "metadata") {
             finalMode = event.answer_mode || "rag_grounded";
+          } else if (event.type === "metadata_extended") {
+            setMessages((current) =>
+              current.map((m) =>
+                m.id === assistantMessageId
+                  ? {
+                      ...m,
+                      confidence_level: event.confidence_level,
+                      confidence_score: event.confidence_score,
+                      explainability_notes: event.explainability_notes,
+                      follow_up_suggestions: event.follow_up_suggestions,
+                    }
+                  : m
+              )
+            );
           } else if (event.type === "error") {
             throw new Error(event.detail || "Stream error");
           }
@@ -181,8 +232,16 @@ function ChatContent() {
         await refreshSessions();
       } catch (error) {
         setMessages((current) => current.filter((m) => m.id !== assistantMessageId));
-        setError(error instanceof Error ? error.message : "Chat request failed");
+        let errorMsg = "Chat request failed";
+        if (error instanceof ApiError && error.status === 429) {
+          errorMsg = config.rate_limit_message;
+        } else if (error instanceof Error) {
+          errorMsg = error.message;
+        }
+        setError(errorMsg);
       } finally {
+        clearInterval(thinkingInterval);
+        setThinkingMessage("");
         setIsLoading(false);
       }
   }
@@ -259,9 +318,12 @@ function ChatContent() {
       <ChatWindow 
         messages={messages}
         isLoading={isLoading}
+        thinkingMessage={thinkingMessage}
         onQuickAction={handleQuickAction}
         onStatus={setToast}
         onRetryMessage={(retryQuestion) => submitPrompt(retryQuestion, null)}
+        onFollowUpClick={(question) => submitPrompt(question, null)}
+        onExportChat={messages.length > 0 ? exportChat : undefined}
         chatWindowRef={chatWindowRef}
         bottomRef={bottomRef}
       />

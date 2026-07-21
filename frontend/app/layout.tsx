@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Providers } from "@/components/Providers";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ChatbotConfigProvider } from "@/lib/chatbot-config";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body>
         <ErrorBoundary>
-          <Providers>{children}</Providers>
+          <ChatbotConfigProvider>
+            <Providers>{children}</Providers>
+          </ChatbotConfigProvider>
         </ErrorBoundary>
       </body>
     </html>

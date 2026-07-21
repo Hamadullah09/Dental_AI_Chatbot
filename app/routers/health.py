@@ -15,6 +15,35 @@ from app.middleware.metrics import CHAT_QUERIES, ACTIVE_INGESTIONS
 router = APIRouter(tags=["health"])
 
 
+@router.get("/config")
+def chatbot_config() -> dict[str, Any]:
+    settings = get_settings()
+    return {
+        "chatbot_name": settings.chatbot_name,
+        "chatbot_tagline": settings.chatbot_tagline,
+        "welcome_message": settings.chatbot_welcome_message,
+        "input_placeholder": settings.chatbot_input_placeholder,
+        "suggested_questions": [q.strip() for q in settings.chatbot_suggested_questions.split("|") if q.strip()],
+        "disclaimer_banner": settings.chatbot_disclaimer_banner,
+        "typing_message": settings.chatbot_typing_message,
+        "searching_message": settings.chatbot_searching_message,
+        "generating_message": settings.chatbot_generating_message,
+        "error_message": settings.chatbot_error_message,
+        "network_error_message": settings.chatbot_network_error_message,
+        "rate_limit_message": settings.chatbot_rate_limit_message,
+        "empty_message": settings.chatbot_empty_message,
+        "no_sources_message": settings.chatbot_no_sources_message,
+        "thinking_messages": [m.strip() for m in settings.chatbot_thinking_messages.split("|") if m.strip()],
+        "export_filename_prefix": settings.chatbot_export_filename_prefix,
+        "medical_disclaimer": settings.medical_disclaimer,
+        "max_upload_mb": settings.max_upload_mb,
+        "streaming_enabled": settings.streaming_enabled,
+        "enable_web_search": bool(settings.tavily_api_key or settings.brave_search_api_key),
+        "enable_multimodal_rag": settings.enable_multimodal_rag,
+        "rate_limit_chat_per_minute": settings.rate_limit_chat_per_minute,
+    }
+
+
 @router.get("/health")
 def health(db: Session = Depends(get_db)) -> dict[str, Any]:
     started = time.perf_counter()

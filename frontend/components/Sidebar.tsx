@@ -693,17 +693,30 @@ export function Sidebar({
                   ))}
 
                   {user?.role === "admin" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenModal("admin");
-                        onClose();
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-red-300 transition-colors hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60"
-                    >
-                      <Settings className="h-5 w-5 shrink-0" />
-                      <span>Admin workspace</span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          router.push("/admin/dashboard");
+                          onClose();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-dental-textPrimary transition-colors hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60"
+                      >
+                        <Sparkles className="h-5 w-5 shrink-0 text-dental-textSecondary" />
+                        <span>Dashboard</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenModal("admin");
+                          onClose();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-red-300 transition-colors hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60"
+                      >
+                        <Settings className="h-5 w-5 shrink-0" />
+                        <span>Admin workspace</span>
+                      </button>
+                    </>
                   )}
 
                   <div className="my-2 border-t border-dental-border dark:border-white/10" />

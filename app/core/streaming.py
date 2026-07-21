@@ -28,7 +28,11 @@ async def stream_chat_response(
 
     try:
         from app.agent.state import AgentState
-        from app.services.rag import RAGService, merge_chunks, rerank_chunks, rewrite_query_for_retrieval
+        from app.agent.nodes.safety import run_safety_check
+        from app.agent.nodes.intent_classifier import classify_intent
+        from app.agent.nodes.confidence import estimate_confidence
+        from app.agent.nodes.follow_up import generate_follow_up_suggestions
+        from app.services.rag import RAGService, rewrite_query_for_retrieval
 
         state = AgentState(
             question=question,
@@ -42,13 +46,46 @@ async def stream_chat_response(
             conversation_history=conversation_history or [],
         )
 
-        yield f"data: {json.dumps({'type': 'thinking', 'detail': 'Searching knowledge base...'})}\n\n"
+        run_safety_check(state)
+
+        if not state.safety_check_passed:
+            if not state.answer:
+                state.answer = "I cannot process this request. Please ask a dental health question."
+            yield f"data: {json.dumps({'type': 'content', 'text': state.answer})}\n\n"
+            blocked_meta = json.dumps({
+                'type': 'metadata_extended',
+                'confidence_level': 'blocked',
+                'confidence_score': 0,
+                'explainability_notes': ['Request blocked by safety system'],
+                'follow_up_suggestions': [],
+                'intent': state.intent,
+                'sub_intent': state.sub_intent,
+            })
+            yield f"data: {blocked_meta}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'disclaimer': ''})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        try:
+            from app.services.memory import MemoryService
+            mem_svc = MemoryService()
+            memory_text = mem_svc.format_memory_for_prompt(user_id)
+            if memory_text:
+                state.memory_context = memory_text
+            mem_svc.track_topic(user_id, question)
+        except Exception:
+            pass
+
+        classify_intent(state)
+        yield f"data: {json.dumps({'type': 'intent', 'intent': state.intent, 'simplify': state.simplify_for_patient})}\n\n"
 
         retrieval_start = time.perf_counter()
         rag = RAGService()
         query = state.question
         retrieval_question = rewrite_query_for_retrieval(query) if settings.enable_query_rewriting else query
         effective_top_k = min(5, max(3, top_k or settings.retrieval_top_k))
+
+        yield f"data: {json.dumps({'type': 'thinking', 'detail': 'Searching knowledge base...'})}\n\n"
 
         chunks = rag.retrieve(retrieval_question, top_k=effective_top_k, filters=filters or {})
 
@@ -71,7 +108,6 @@ async def stream_chat_response(
         ]
 
         retrieval_ms = (time.perf_counter() - retrieval_start) * 1000
-        yield f"data: {json.dumps({'type': 'thinking', 'detail': f'Found {len(chunks)} sources in {retrieval_ms:.0f}ms. Generating answer...'})}\n\n"
 
         context_parts = []
         for i, chunk in enumerate(chunks[:5]):
@@ -83,33 +119,11 @@ async def stream_chat_response(
 
         context_text = "\n\n---\n\n".join(context_parts)
 
-        system_prompt = (
-            "You are DentalGPT, an expert dental AI assistant. You provide accurate, evidence-based "
-            "dental information grounded in the provided context. Always cite your sources using [Source N] format. "
-            "Never provide medical advice that replaces professional dental consultation. "
-            "Include the medical disclaimer at the end of every response.\n\n"
-            f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
-            "Response Guidelines:\n"
-            "- Start with a direct, concise answer in 1-3 sentences\n"
-            "- Use **bold** for important dental terms, symptoms, and warnings\n"
-            "- Use markdown headings (##) for major sections\n"
-            "- Use bullet points for lists of symptoms, causes, or steps\n"
-            "- Keep paragraphs short (2-4 sentences max)\n"
-            "- Aim for 200-400 words for educational questions\n"
-            "- Always include [Source N] citations for factual claims\n"
-            "- End with appropriate safety/consultation note\n\n"
-            f"Context from dental knowledge base:\n{context_text}\n\n"
-        )
+        system_prompt = _build_streaming_system_prompt(state, context_text, settings)
+        user_prompt = _build_streaming_user_prompt(question, conversation_history)
 
-        user_prompt = question
-        if conversation_history:
-            history_text = "\n".join(
-                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content'][:200]}"
-                for msg in conversation_history[-4:]
-            )
-            user_prompt = f"Previous conversation:\n{history_text}\n\nCurrent question: {question}"
-
-        yield f"data: {json.dumps({'type': 'metadata', 'answer_mode': 'rag_grounded', 'source_count': len(chunks), 'retrieval_ms': retrieval_ms})}\n\n"
+        yield f"data: {json.dumps({'type': 'thinking', 'detail': f'Found {len(chunks)} sources. Generating answer...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'metadata', 'answer_mode': 'rag_grounded', 'source_count': len(chunks), 'retrieval_ms': retrieval_ms, 'intent': state.intent})}\n\n"
 
         from app.services.llm import LLMService
         llm = LLMService()
@@ -126,6 +140,20 @@ async def stream_chat_response(
             else:
                 yield f"data: {json.dumps({'type': 'content', 'text': settings.medical_disclaimer})}\n\n"
 
+        state.answer = full_answer
+        state.answer_mode = "rag_grounded" if chunks else "general_fallback"
+
+        for chunk in chunks[:5]:
+            state.sources.append({
+                "source_type": chunk.citation.source_type,
+                "document_name": chunk.citation.document_name or "Unknown",
+                "page_number": chunk.citation.page_number,
+                "score": chunk.citation.score,
+            })
+
+        estimate_confidence(state)
+        generate_follow_up_suggestions(state)
+
         source_data = [
             {
                 "source_type": chunk.citation.source_type,
@@ -137,6 +165,18 @@ async def stream_chat_response(
         ]
 
         yield f"data: {json.dumps({'type': 'sources', 'sources': source_data, 'visuals': []})}\n\n"
+
+        extended_meta = json.dumps({
+            'type': 'metadata_extended',
+            'confidence_level': state.confidence_level,
+            'confidence_score': round(state.confidence_score, 2),
+            'explainability_notes': state.explainability_notes,
+            'follow_up_suggestions': state.follow_up_suggestions,
+            'intent': state.intent,
+            'sub_intent': state.sub_intent,
+        })
+        yield f"data: {extended_meta}\n\n"
+
         yield f"data: {json.dumps({'type': 'done', 'disclaimer': settings.medical_disclaimer})}\n\n"
 
     except Exception as exc:
@@ -144,6 +184,69 @@ async def stream_chat_response(
         yield f"data: {json.dumps({'type': 'error', 'detail': 'An error occurred processing your request.'})}\n\n"
 
     yield "data: [DONE]\n\n"
+
+
+def _build_streaming_system_prompt(state: AgentState, context_text: str, settings: Any) -> str:
+    base = (
+        "You are DentalGPT, an expert dental AI assistant. You provide accurate, evidence-based "
+        "dental information grounded in the provided context. Always cite your sources using [Source N] format. "
+        "Never provide medical advice that replaces professional dental consultation. "
+        "Include the medical disclaimer at the end of every response.\n\n"
+        f"Medical Disclaimer: {settings.medical_disclaimer}\n\n"
+        "Response Guidelines:\n"
+        "- Start with a direct, concise answer in 1-3 sentences\n"
+        "- Use **bold** for important dental terms, symptoms, and warnings\n"
+        "- Use markdown headings (##) for major sections\n"
+        "- Use bullet points for lists of symptoms, causes, or steps\n"
+        "- Keep paragraphs short (2-4 sentences max)\n"
+        "- Always include [Source N] citations for factual claims\n"
+        "- End with appropriate safety/consultation note\n\n"
+    )
+
+    if state.intent == "emergency":
+        base += "IMPORTANT: This appears urgent. Start with URGENT: and emphasize seeking immediate care.\n\n"
+    elif state.intent == "image_analysis":
+        base += "Describe observable findings without certainty. Always recommend professional evaluation.\n\n"
+    elif state.intent == "symptom":
+        base += "Explain causes, when to see a dentist, and self-care tips. Recommend professional evaluation.\n\n"
+    elif state.intent == "treatment":
+        base += "Explain procedures, outcomes, recovery, risks, and alternatives.\n\n"
+    elif state.intent == "patient_education":
+        base += "Use PLAIN LANGUAGE. Define terms. Use analogies. Keep it simple for patient understanding.\n\n"
+    elif state.intent == "clinical_decision":
+        base += "Provide evidence-based recommendations for dental professionals. Discuss differentials and guidelines.\n\n"
+    elif state.intent == "research":
+        base += "Summarize evidence, mention study types, note evidence levels.\n\n"
+    elif state.intent == "prescription_explain":
+        base += "Explain medication use, side effects, precautions. Warn against self-prescribing.\n\n"
+
+    if state.simplify_for_patient:
+        base += "Use SIMPLE LANGUAGE. Define technical terms. Use analogies.\n\n"
+
+    try:
+        from app.services.rag import role_behavior_instruction
+        base += role_behavior_instruction(state.user_role) + "\n\n"
+    except Exception:
+        pass
+
+    if context_text:
+        base += f"Context from dental knowledge base:\n{context_text}\n\n"
+
+    if state.memory_context:
+        base += f"User context:\n{state.memory_context}\n\n"
+
+    return base
+
+
+def _build_streaming_user_prompt(question: str, conversation_history: list[dict[str, str]] | None) -> str:
+    prompt = question
+    if conversation_history:
+        history_text = "\n".join(
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content'][:200]}"
+            for msg in conversation_history[-4:]
+        )
+        prompt = f"Previous conversation:\n{history_text}\n\nCurrent question: {prompt}"
+    return prompt
 
 
 def format_sse_event(event_type: str, data: dict[str, Any]) -> str:

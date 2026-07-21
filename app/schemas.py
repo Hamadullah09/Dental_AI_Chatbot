@@ -867,3 +867,28 @@ class DentistAvailabilitySlot(BaseModel):
 class ReindexRequest(BaseModel):
     """Request body for reindex operation."""
     pass
+
+
+class UserPreferencesRead(BaseModel):
+    preferred_language: str = "en"
+    simplify_for_patient: bool = False
+    preferred_specialty: str = ""
+    frequently_asked_topics: list[str] = []
+    recent_sessions: list[dict[str, str]] = []
+
+
+class UserPreferencesUpdate(BaseModel):
+    preferred_language: str | None = None
+    simplify_for_patient: bool | None = None
+    preferred_specialty: str | None = None
+
+
+class EvaluationMetricsResponse(BaseModel):
+    total_queries: int = 0
+    avg_retrieval_latency_ms: float = 0.0
+    avg_llm_latency_ms: float = 0.0
+    citation_accuracy: float = 0.0
+    user_satisfaction: float = 0.0
+    hallucination_rate: float = 0.0
+    failed_retrievals: int = 0
+    mode_breakdown: dict[str, int] = {}

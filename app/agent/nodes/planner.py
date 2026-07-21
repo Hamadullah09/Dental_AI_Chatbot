@@ -86,9 +86,11 @@ def detect_intent(state: AgentState) -> AgentState:
 
 
 def can_answer_directly(state: AgentState) -> Literal["yes", "no"]:
-    if state.intent == "direct":
+    if state.intent in ("conversational", "direct"):
         return "yes"
     if state.intent == "emergency":
+        return "no"
+    if state.simplify_for_patient and state.intent in ("patient_education", "general"):
         return "no"
     question_lower = state.question.lower()
     if _is_conversational_query(question_lower):

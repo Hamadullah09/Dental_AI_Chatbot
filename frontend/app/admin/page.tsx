@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { Download, FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles, Wand2, ScrollText } from "lucide-react";
+import { BarChart3, Download, FileUp, RefreshCw, Trash2, Database, ShieldAlert, Sparkles, Wand2, ScrollText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";

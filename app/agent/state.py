@@ -19,6 +19,9 @@ class AgentState:
     conversation_history: list[dict[str, str]] = field(default_factory=list)
 
     intent: str = "general"
+    sub_intent: str = ""
+    intent_confidence: float = 0.0
+    detected_entities: dict[str, list[str]] = field(default_factory=dict)
     query_variants: list[str] = field(default_factory=list)
     rewritten_query: str = ""
 
@@ -36,6 +39,18 @@ class AgentState:
     visuals: list[VisualCitation] = field(default_factory=list)
     answer_mode: str = "rag_grounded"
     disclaimer: str = ""
+
+    follow_up_suggestions: list[str] = field(default_factory=list)
+    confidence_level: str = "high"
+    confidence_score: float = 0.0
+    explainability_notes: list[str] = field(default_factory=list)
+
+    safety_flags: list[str] = field(default_factory=list)
+    safety_check_passed: bool = True
+
+    simplify_for_patient: bool = False
+    preferred_language: str = "en"
+    user_preferences: dict[str, Any] = field(default_factory=dict)
 
     error: str | None = None
     retry_count: int = 0

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Literal
 
 from app.agent.state import AgentState
+from app.agent.nodes.intent_classifier import classify_intent
+from app.agent.nodes.safety import run_safety_check
+from app.agent.nodes.confidence import estimate_confidence
+from app.agent.nodes.follow_up import generate_follow_up_suggestions
 from app.agent.nodes.planner import (
-    detect_intent, can_answer_directly, generate_direct_answer,
+    can_answer_directly, generate_direct_answer,
     has_enough_evidence, search_more, respond_with_uncertainty,
     rewrite_query, build_context, validate_citations, format_response, handle_error,
 )
@@ -114,7 +118,7 @@ def retrieve_visuals(state: AgentState) -> AgentState:
         state.add_trace("visual_retriever", "skipped", "Multimodal RAG disabled")
         return state
 
-    if state.intent not in ("visual", "general") and not state.search_web:
+    if state.intent not in ("image_analysis", "visual", "general") and not state.search_web:
         state.add_trace("visual_retriever", "skipped", f"Intent '{state.intent}' does not need visuals")
         return state
 
@@ -319,16 +323,21 @@ def _build_system_prompt(state: AgentState) -> str:
         "- Use markdown headings (##) for major sections\n"
         "- Use bullet points for lists of symptoms, causes, or steps\n"
         "- Keep paragraphs short (2-3 sentences max)\n"
-        "- Aim for 200-500 words for educational questions\n"
-        "- For simple questions, keep answers brief\n"
         "- Always include [Source N] citations for factual claims\n"
         "- End with appropriate safety/consultation note\n\n"
     )
 
     if state.intent == "emergency":
-        base += "IMPORTANT: This appears to be an emergency query. Emphasize seeking immediate professional dental care.\n\n"
-    elif state.intent == "visual":
-        base += "The user is asking about visual content. Reference any provided images, diagrams, or figures.\n\n"
+        base += (
+            "IMPORTANT: This appears to be an emergency query. Emphasize seeking immediate professional dental care. "
+            "Start with URGENT: and provide clear steps for what the person should do immediately.\n\n"
+        )
+    elif state.intent == "image_analysis":
+        base += (
+            "The user is asking about visual content (X-ray, radiograph, diagram, photograph). "
+            "Describe what can be observed, note any significant findings, and discuss clinical implications. "
+            "Never diagnose with certainty - always recommend professional evaluation.\n\n"
+        )
     elif state.intent == "symptom":
         base += (
             "The user is asking about symptoms. Provide clear explanations of possible causes, "
@@ -337,7 +346,51 @@ def _build_system_prompt(state: AgentState) -> str:
     elif state.intent == "treatment":
         base += (
             "The user is asking about dental treatments. Explain procedures, expected outcomes, "
-            "recovery information, and cost considerations where relevant.\n\n"
+            "recovery information, and cost considerations where relevant. Include risks and complications.\n\n"
+        )
+    elif state.intent == "diagnosis":
+        base += (
+            "The user is asking about diagnosis. Explain diagnostic criteria, common findings, "
+            "and how conditions are identified. Always note that definitive diagnosis requires clinical examination.\n\n"
+        )
+    elif state.intent == "patient_education":
+        base += (
+            "The user wants a simplified explanation suitable for patient education. "
+            "Use plain language, avoid jargon when possible, explain technical terms, "
+            "and use analogies or examples to make concepts easy to understand. "
+            "Break down complex information into simple steps.\n\n"
+        )
+    elif state.intent == "clinical_decision":
+        base += (
+            "The user is asking for clinical decision support. Provide evidence-based recommendations, "
+            "consider differential diagnoses, discuss treatment options with pros and cons, "
+            "reference clinical guidelines where available. This is for professional use.\n\n"
+        )
+    elif state.intent == "research":
+        base += (
+            "The user is asking for research information. Summarize evidence, mention study types, "
+            "note evidence levels, compare findings, and highlight clinical relevance. "
+            "Reference specific guidelines, papers, or evidence hierarchies where possible.\n\n"
+        )
+    elif state.intent == "prescription_explain":
+        base += (
+            "The user is asking about a prescription or medication. Explain what the medication is used for, "
+            "how it works, common side effects, and important precautions. "
+            "Warn against self-prescribing and always recommend professional consultation.\n\n"
+        )
+    elif state.intent == "report_explain":
+        base += (
+            "The user is asking about a dental report or lab result. Explain what the findings mean, "
+            "note normal vs. abnormal ranges, and suggest possible next steps. "
+            "Always note that interpretation requires clinical context.\n\n"
+        )
+
+    if state.simplify_for_patient:
+        base += (
+            "Use SIMPLE LANGUAGE appropriate for patient education. "
+            "Define any technical terms you use. Keep sentences short. "
+            "Use analogies to explain complex concepts. "
+            "Format with clear headings and bullet points for readability.\n\n"
         )
 
     try:
@@ -349,6 +402,9 @@ def _build_system_prompt(state: AgentState) -> str:
 
     if state.context_text:
         base += f"Context from dental knowledge base:\n{state.context_text}\n\n"
+
+    if state.visual_context:
+        base += f"Visual context:\n{state.visual_context}\n\n"
 
     return base
 
@@ -369,7 +425,8 @@ def build_langgraph():
 
     workflow = StateGraph(AgentState)
 
-    workflow.add_node("detect_intent", detect_intent)
+    workflow.add_node("run_safety_check", run_safety_check)
+    workflow.add_node("classify_intent", classify_intent)
     workflow.add_node("generate_direct_answer", generate_direct_answer)
     workflow.add_node("rewrite_query", rewrite_query)
     workflow.add_node("retrieve_chunks", retrieve_chunks)
@@ -379,14 +436,25 @@ def build_langgraph():
     workflow.add_node("build_context", build_context)
     workflow.add_node("generate_answer", generate_answer)
     workflow.add_node("validate_citations", validate_citations)
+    workflow.add_node("estimate_confidence", estimate_confidence)
     workflow.add_node("respond_with_uncertainty", respond_with_uncertainty)
+    workflow.add_node("generate_follow_up_suggestions", generate_follow_up_suggestions)
     workflow.add_node("format_response", format_response)
     workflow.add_node("handle_error", handle_error)
 
-    workflow.set_entry_point("detect_intent")
+    workflow.set_entry_point("run_safety_check")
 
     workflow.add_conditional_edges(
-        "detect_intent",
+        "run_safety_check",
+        lambda state: "blocked" if not state.safety_check_passed and state.answer_mode == "safety_blocked" else "continue",
+        {
+            "blocked": "format_response",
+            "continue": "classify_intent",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "classify_intent",
         can_answer_directly,
         {
             "yes": "generate_direct_answer",
@@ -394,7 +462,9 @@ def build_langgraph():
         },
     )
 
-    workflow.add_edge("generate_direct_answer", "format_response")
+    workflow.add_edge("generate_direct_answer", "estimate_confidence")
+    workflow.add_edge("estimate_confidence", "generate_follow_up_suggestions")
+    workflow.add_edge("generate_follow_up_suggestions", "format_response")
 
     workflow.add_edge("rewrite_query", "retrieve_chunks")
     workflow.add_edge("retrieve_chunks", "retrieve_visuals")
@@ -412,7 +482,7 @@ def build_langgraph():
     workflow.add_conditional_edges(
         "search_more",
         lambda state: "enough"
-        if (state.retry_count <= state.max_retries and (state.retrieved_chunks or (state.intent == "visual" and state.retrieved_visuals)))
+        if (state.retry_count <= state.max_retries and (state.retrieved_chunks or (state.intent in ("image_analysis", "visual") and state.retrieved_visuals)))
         else "uncertain",
         {
             "enough": "build_context",
@@ -422,8 +492,10 @@ def build_langgraph():
 
     workflow.add_edge("build_context", "generate_answer")
     workflow.add_edge("generate_answer", "validate_citations")
-    workflow.add_edge("validate_citations", "format_response")
+    workflow.add_edge("validate_citations", "estimate_confidence")
+    workflow.add_edge("estimate_confidence", "generate_follow_up_suggestions")
     workflow.add_edge("respond_with_uncertainty", "format_response")
+    workflow.add_edge("generate_follow_up_suggestions", "format_response")
     workflow.add_edge("format_response", END)
 
     return workflow.compile()
