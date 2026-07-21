@@ -20,7 +20,7 @@ export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps
   const [showSources, setShowSources] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const isAssistant = message.role === "assistant";
-  const hasRenderableContent = message.content.trim().length > 0;
+  const hasRenderableContent = (message.content || "").trim().length > 0;
 
   async function handleFeedback(rating: number, type: "helpful" | "needs-work") {
     if (!token || !message.id) return;
@@ -35,14 +35,14 @@ export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps
   }
 
   async function handleCopy() {
-    await navigator.clipboard?.writeText(message.content);
+    await navigator.clipboard?.writeText(message.content || "");
     onStatus?.("Copied response.");
     setTimeout(() => onStatus?.(""), 2000);
   }
 
   async function handleShare() {
     if (navigator.share) {
-      await navigator.share({ title: "Dental AI response", text: message.content });
+      await navigator.share({ title: "Dental AI response", text: message.content || "" });
       return;
     }
     await handleCopy();
@@ -119,7 +119,7 @@ export function MessageBubble({ message, onStatus, onRetry }: MessageBubbleProps
                     <div className="space-y-1 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="rounded-full bg-dental-accentSoft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-dental-accent">
-                          {visual.visual_type.replace("_", " ")}
+                          {(visual.visual_type || "image").replace("_", " ")}
                         </span>
                         {visual.page_number && <span className="text-[10px] text-dental-textMuted">p.{visual.page_number}</span>}
                       </div>

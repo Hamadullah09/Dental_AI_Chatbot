@@ -27,7 +27,7 @@ export function ChatWindow({
 
   function previousUserQuestion(index: number) {
     for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-      if (messages[cursor]?.role === "user") {
+      if (messages[cursor]?.role === "user" && messages[cursor]?.content) {
         return messages[cursor].content.replace(/^Attached PDF:[^\n]*\n\n/, "").trim();
       }
     }
