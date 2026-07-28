@@ -1,30 +1,59 @@
 # Remaining Work
 
-The MVP now includes FastAPI services, JWT auth, roles, PostgreSQL-ready models, Qdrant ingestion, admin PDF management, chat history, citations, feedback, Docker Compose, and tests.
+This document previously claimed Alembic migrations, rate limiting, and structured
+logging were still missing - all three already existed in the codebase when that was
+written (`alembic/`, `slowapi` in requirements.txt, `structlog`/`python-json-logger`). That
+mismatch is exactly why this file should be verified against the actual code before being
+trusted, rather than treated as ground truth - see `docs/GAP_AUDIT_PHASE0.md` finding #8.
+Rewritten below to reflect what's actually done (as of the production-hardening pass
+covering Phases 0-6 in `docs/GAP_AUDIT_PHASE0.md`) vs. genuinely still open.
 
-## Production Hardening
+## Done in this pass (previously listed here as "remaining")
 
-- Add Alembic migrations and a release migration workflow.
-- Move PDF ingestion to a background worker such as Celery, RQ, or FastAPI background tasks with progress tracking.
-- Add API rate limiting, structured logging, request IDs, and admin audit logs.
-- Add full PHI controls before real patient use: consent, retention policy, encryption review, access logs, and redaction.
-- Disable public admin registration after first bootstrap.
+- Alembic migrations, API rate limiting (per-user + per-IP), structured JSON logging,
+  request IDs, admin audit logs - all pre-existing, now verified and (for rate limiting)
+  extended to endpoints that had none (upload).
+- PDF ingestion moved off the request-serving process: the arq-based async worker
+  (`app/workers/tasks.py`) existed but was never wired up; it's now the primary path with
+  in-process fallback (Phase 4).
+- PHI controls: field-level encryption at rest for `Prescription`/`DentalRecord` sensitive
+  columns, audit logging on PHI access, and `docs/COMPLIANCE.md` documenting what's still
+  missing (BAAs, data residency, right-to-erasure, consent, retention) rather than
+  claiming this is fully solved (Phase 2).
+- Admin feedback review: `GET /admin/feedback` (Phase 5) - previously feedback could be
+  submitted but never reviewed.
+- Citation verification exists (`app/agent/nodes/citation_verifier.py`) but is a
+  word-overlap heuristic, not a real verifier - see the "RAG Quality" gaps below, this is
+  not resolved, just more precisely characterized now.
+- Safety classifiers for emergency scenarios: red-flag patterns now short-circuit to a
+  fixed triage message instead of running the full generation pipeline (Phase 5a).
+  Medication/pediatric/pregnancy-specific classifiers are still regex heuristics, not a
+  verified system - see below.
+- CI for linting, tests, and dependency scanning already existed but `mypy`/`safety`/
+  `bandit` were all piped through `|| true`, so none of them could actually fail the
+  build - see Phase 6 for what's still `|| true` and why.
 
-## RAG Quality
+## Still genuinely open
 
-- Expand the new RAG evaluation dataset with more expert-reviewed dental questions.
-- Add citation verification tests that require every clinical claim to map to a retrieved source.
-- Add human review labels for faithfulness, safety, and citation correctness.
-- Add safety classifiers for emergency, medication, pediatric, pregnancy, and post-operative scenarios.
-
-## Frontend
-
-- Replace the static MVP with a component frontend when product scope stabilizes.
-- Add document ingestion progress and richer chat session management.
-- Add admin feedback review and export.
-
-## Operations
-
-- Add CI for linting, tests, Docker build, and dependency scanning.
-- Add backup/restore documentation for PostgreSQL and Qdrant.
-- Add environment-specific deployment guides.
+- **Public admin registration**: `ALLOW_ADMIN_REGISTRATION` exists as an escape hatch but
+  is not automatically disabled after first bootstrap - if you rely on this flag, confirm
+  it's off in any real deployment; nothing in the code enforces that for you.
+- **RAG evaluation dataset**: `docs/evaluation_dataset.jsonl` has 30 cases (Phase 5) - more
+  expert-reviewed questions would make `scripts/ci_retrieval_gate.py` a stronger signal.
+- **Human review labels for faithfulness/safety/citation correctness**: the feedback
+  review queue (Phase 5) surfaces user ratings, but there's no structured workflow for a
+  domain expert to label a sample of *unreviewed* conversations against a rubric (this is
+  different from user-submitted feedback) - Phase 3's task description asked for an
+  "evaluation/quality dashboard" tracking this over time, which was not built here; the
+  citation/retrieval CI gate is the closest thing that exists.
+- **Self-check / safety detection is still heuristic, not verified**: `ENABLE_SELF_CHECK`
+  and `app/agent/nodes/safety.py` are pattern-based (grounding-in-context word overlap,
+  prescribing-language regex, emergency-keyword regex). No LLM- or embedding-based
+  verifier exists yet, and results aren't persisted for evaluation over time.
+- **Frontend**: still the original Next.js app: no rework was in scope for this pass.
+- **Environment-specific deployment guides**: `k8s/README.md` (Phase 4) and
+  `docs/DEPLOYMENT.md` exist for Docker Compose / Kubernetes, but there's no guide for
+  e.g. a specific cloud provider's managed services.
+- **Backup/restore**: `docs/BACKUP.md` exists; confirm it's still accurate given the
+  encryption/backup gap noted in `docs/ARCHITECTURE.md`'s Security Architecture section
+  (backups are not confirmed encrypted despite `SecurityManager.encrypt_backup()` existing).

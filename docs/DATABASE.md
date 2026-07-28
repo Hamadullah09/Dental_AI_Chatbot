@@ -24,7 +24,9 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 ```
 
-**Roles**: `admin`, `dentist`, `hygienist`, `patient`
+**Roles**: `admin`, `dentist`, `student`, `patient` (matches `app/models.py::UserRole` -
+this doc previously listed `hygienist` instead of `student`, which was never a real role;
+see `docs/GAP_AUDIT_PHASE0.md` finding #3 for whether `hygienist` should become one)
 
 ### documents
 
