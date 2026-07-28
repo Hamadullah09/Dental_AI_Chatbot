@@ -66,6 +66,20 @@ jobs:
         with:
           file: ./coverage.xml
 
+      # Phase 5/6: retrieval/citation quality gate (scripts/evaluate_rag.py + the 30-case
+      # docs/evaluation_dataset.jsonl already existed but were never run anywhere before
+      # this). No Qdrant service runs in this job, so this currently always skips - it's
+      # wired in now, ready to become a real gate the moment a populated Qdrant fixture is
+      # added here (see scripts/ci_retrieval_gate.py's docstring for exactly how).
+      - name: Retrieval quality gate (skips if no Qdrant data is reachable)
+        env:
+          DATABASE_URL: postgresql+psycopg://dental:test-password@localhost:5432/dental_ai_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENVIRONMENT: testing
+        run: |
+          python scripts/ci_retrieval_gate.py
+
   security:
     runs-on: ubuntu-latest
     steps:

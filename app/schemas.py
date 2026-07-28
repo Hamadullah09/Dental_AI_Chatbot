@@ -188,6 +188,34 @@ class FeedbackRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FeedbackReviewItem(BaseModel):
+    """Phase 5: feedback review queue - previously feedback could be submitted
+    (POST /api/feedback) but nothing surfaced it for review; low ratings had nowhere to
+    go. Includes enough context (the question + answer text) to actually act on a
+    low-rated turn without needing to separately look up the message."""
+
+    id: str
+    rating: int
+    comment: str | None
+    created_at: datetime
+    message_id: str
+    question: str | None
+    answer: str | None
+    user_id: str
+    user_email: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackReviewResult(BaseModel):
+    items: list[FeedbackReviewItem]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    average_rating: float | None
+
+
 class TimeSlot(BaseModel):
     day_of_week: int = Field(ge=0, le=6)
     start_time: str

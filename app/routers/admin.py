@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.deps import require_admin
-from app.models import AuditLog, Document, DocumentIngestionLog, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
-from app.schemas import DatasetGenerationRequest, DatasetGenerationStatus, DocumentIngestionLogRead, DocumentRead
+from app.models import AuditLog, Document, DocumentIngestionLog, DocumentStatus, DocumentType, Feedback, Message, ReviewStatus, TrustLevel, User
+from app.schemas import DatasetGenerationRequest, DatasetGenerationStatus, DocumentIngestionLogRead, DocumentRead, FeedbackReviewItem, FeedbackReviewResult
 from app.services.dataset_generation import REVIEW_CSV_PATH, export_review_csv, generate_dataset_background, read_dataset_status
 from app.services.documents import save_upload
 from app.services.ingestion import IngestionService
@@ -257,3 +257,77 @@ def revoke_user_sessions(
     )
     db.add(log)
     db.commit()
+
+
+@router.get("/feedback", response_model=FeedbackReviewResult)
+def list_feedback_for_review(
+    max_rating: int | None = Query(None, ge=1, le=5, description="Only feedback at or below this rating (default: all)"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> FeedbackReviewResult:
+    """Feedback review queue (Phase 5): feedback could always be submitted via
+    POST /api/feedback, but nothing let anyone actually see it - low ratings had no way
+    to surface for review or feed into retrieval/prompt tuning. Ordered worst-first by
+    default (max_rating unset shows everything, still worst-first) so the most
+    actionable items are at the top."""
+    from app.models import MessageRole
+
+    query = db.query(Feedback)
+    if max_rating is not None:
+        query = query.filter(Feedback.rating <= max_rating)
+
+    total = query.count()
+    total_pages = (total + limit - 1) // limit if total else 0
+    offset = (page - 1) * limit
+
+    rows = (
+        query.order_by(Feedback.rating.asc(), Feedback.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items: list[FeedbackReviewItem] = []
+    for feedback in rows:
+        assistant_message = db.get(Message, feedback.message_id)
+        question = None
+        if assistant_message:
+            preceding = (
+                db.query(Message)
+                .filter(
+                    Message.session_id == assistant_message.session_id,
+                    Message.role == MessageRole.user,
+                    Message.created_at <= assistant_message.created_at,
+                )
+                .order_by(Message.created_at.desc())
+                .first()
+            )
+            question = preceding.content if preceding else None
+        user = db.get(User, feedback.user_id)
+        items.append(
+            FeedbackReviewItem(
+                id=feedback.id,
+                rating=feedback.rating,
+                comment=feedback.comment,
+                created_at=feedback.created_at,
+                message_id=feedback.message_id,
+                question=question,
+                answer=assistant_message.content if assistant_message else None,
+                user_id=feedback.user_id,
+                user_email=user.email if user else None,
+            )
+        )
+
+    all_ratings = [row.rating for row in db.query(Feedback.rating).all()]
+    average_rating = sum(all_ratings) / len(all_ratings) if all_ratings else None
+
+    return FeedbackReviewResult(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        average_rating=average_rating,
+    )

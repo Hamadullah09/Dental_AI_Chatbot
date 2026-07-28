@@ -357,6 +357,14 @@ class IngestionService:
                         "quality_score": quality.quality_score,
                         "is_noisy": quality.is_noisy,
                         "noise_reasons": quality.noise_reasons,
+                        # Document versioning (Phase 5): re-ingestion already deletes this
+                        # document's old chunks/vectors before adding new ones (see the
+                        # existing_chunk_count check above), so stale-chunk mixing was
+                        # already prevented mechanically. This timestamp adds explicit
+                        # traceability - "which ingestion run produced this chunk" - for
+                        # debugging/auditing without needing a schema migration (reuses
+                        # the ingestion_started_at column that's already set per-run).
+                        "document_version": document.ingestion_started_at.isoformat() if document.ingestion_started_at else None,
                     }
                     points.append(qmodels.PointStruct(id=point_id, vector=vector, payload=payload))
                     db_chunks.append(
