@@ -137,7 +137,7 @@ class AKUCrawler:
                             profile_id = match.group(1)
 
                 if not profile_id and name:
-                    profile_id = hashlib.md5(name.encode()).hexdigest()[:8]
+                    profile_id = hashlib.md5(name.encode(), usedforsecurity=False).hexdigest()[:8]
 
                 doctor_code = self._extract_doctor_code(card)
 

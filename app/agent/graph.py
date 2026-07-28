@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.agent.state import AgentState
 from app.agent.nodes.intent_classifier import classify_intent
@@ -13,8 +13,11 @@ from app.agent.nodes.planner import (
     has_enough_evidence, search_more, respond_with_uncertainty,
     rewrite_query, build_context, validate_citations, format_response, handle_error,
 )
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.services.rag import RAGService, RetrievedChunk
 
 logger = get_logger(__name__)
 
@@ -56,7 +59,9 @@ def load_memory_context(state: AgentState) -> AgentState:
     return state
 
 
-def _run_requested_retrieval_mode(rag, rag_mode: str, query: str, variants: list[str], top_k: int, filters: dict, settings) -> list:
+def _run_requested_retrieval_mode(
+    rag: "RAGService", rag_mode: str, query: str, variants: list[str], top_k: int, filters: dict[str, Any], settings: Settings
+) -> list["RetrievedChunk"]:
     from app.services.rag import merge_chunks, rerank_chunks
 
     if rag_mode == "multi_query" and len(variants) > 1:

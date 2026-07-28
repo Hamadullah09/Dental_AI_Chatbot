@@ -49,8 +49,16 @@ jobs:
           ruff check app/ --output-format=github
           ruff format --check app/
 
-      - name: Type check with mypy
-        run: mypy app/ --ignore-missing-imports || true
+      # Phase 6: `mypy ... || true` never failed the build regardless of how many errors
+      # existed. The codebase has ~166 pre-existing type errors concentrated in legacy
+      # modules this hardening pass didn't touch (app/services/rag.py, dashboard.py,
+      # settings.py, dental_records.py) - fixing all of them blind, under this pass's scope,
+      # risks introducing behavior bugs worse than the status quo. Instead this is a ratchet
+      # (see scripts/mypy_baseline_gate.py and mypy_baseline.txt): the build now genuinely
+      # fails if a change introduces new type errors beyond the committed baseline, and the
+      # baseline is meant to be lowered over time as legacy modules get cleaned up.
+      - name: Type check with mypy (baseline gate)
+        run: python scripts/mypy_baseline_gate.py
 
       - name: Run tests
         env:
@@ -90,13 +98,31 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Run security scan
+      - name: Install dependencies
         run: |
-          pip install safety bandit
-          safety check -r requirements.txt || true
-          bandit -r app/ -f json -o bandit-report.json || true
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "safety==3.*" "bandit[toml]"
+
+      # Phase 6: both scanners used to run with `|| true`, so neither could ever fail the
+      # build no matter what they found. Fixed/suppressed-with-reason findings and the
+      # rationale for what's excluded live in pyproject.toml's [tool.bandit] (skips B110,
+      # the deliberate fail-open try/except/pass pattern) and .safety-policy.yml (the two
+      # ecdsa findings, unreachable here since JWTs are signed HS256/hmac, not EC - see
+      # that file for the full explanation). Both are now real gates.
+      #
+      # safety scans a `pip freeze` of the resolved install, not requirements.txt directly:
+      # safety's default `ignore-unpinned-requirements: true` silently drops every finding
+      # against a floating spec like `cryptography>=42.0.0` (this project's pinning style),
+      # so scanning requirements.txt as-is always falsely reports 0 vulnerabilities.
+      - name: Security scan (bandit + safety, blocking)
+        run: |
+          bandit -c pyproject.toml -r app/ -f json -o bandit-report.json
+          pip freeze > frozen-requirements.txt
+          safety check -r frozen-requirements.txt --policy-file .safety-policy.yml
 
       - name: Upload security report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -34,7 +34,7 @@ def _normalized_question_key(question: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
 
 
-def cache_successful_answer(question: str, answer: str, sources: list, visuals: list | None = None) -> None:
+def cache_successful_answer(question: str, answer: str, sources: list[Any], visuals: list[Any] | None = None) -> None:
     """Called after a normal full_hybrid turn succeeds, so that same/similar questions can
     be served from cache if retrieval later degrades entirely (Qdrant AND Postgres down).
     This is a coarse question-text cache, not full retrieval - documented simplification,
@@ -52,7 +52,7 @@ def cache_successful_answer(question: str, answer: str, sources: list, visuals: 
         logger.debug("degradation.cache_write_failed", exc_info=True)
 
 
-def get_cached_answer(question: str) -> dict | None:
+def get_cached_answer(question: str) -> dict[str, Any] | None:
     try:
         return _answer_cache().get(_normalized_question_key(question))
     except Exception:
@@ -60,7 +60,7 @@ def get_cached_answer(question: str) -> dict | None:
 
 
 def keyword_only_retrieve(
-    rag: RAGService, question: str, top_k: int, filters: dict
+    rag: RAGService, question: str, top_k: int, filters: dict[str, Any]
 ) -> list[RetrievedChunk]:
     """Bypasses Qdrant entirely: BM25 over Postgres DocumentChunk rows only. This is the
     'BM25-only retrieval if dense search times out' tier called for in Phase 1."""

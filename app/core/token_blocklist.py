@@ -71,4 +71,4 @@ def refresh_token_device_mismatch(token_hash: str, user_agent: str | None) -> bo
     stored = _device_binding_cache().get(token_hash)
     if stored is None:
         return False
-    return stored != _device_fingerprint(user_agent)
+    return bool(stored != _device_fingerprint(user_agent))

@@ -80,7 +80,7 @@ class ResilientEmbeddingModel:
         self._try_cache_store(result, *args, **kwargs)
         return result
 
-    def _single_text(self, args: tuple, kwargs: dict) -> str | None:
+    def _single_text(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str | None:
         texts = args[0] if args else kwargs.get("texts") or kwargs.get("sentences")
         if isinstance(texts, str):
             return texts

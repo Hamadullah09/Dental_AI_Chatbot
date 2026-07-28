@@ -162,7 +162,7 @@ def retry_with_backoff(
                     logger.warning(f"retry.exhausted name={name} attempts={attempt} error={exc}")
                 raise
             delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
-            delay = delay * (0.5 + random.random() * 0.5)
+            delay = delay * (0.5 + random.random() * 0.5)  # nosec B311 - retry jitter, not a security use of random
             logger.info(f"retry.attempt name={name} attempt={attempt} next_delay_s={delay:.2f} error={exc}")
             time.sleep(delay)
 

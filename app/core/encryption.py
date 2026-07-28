@@ -3,18 +3,23 @@ from __future__ import annotations
 import base64
 import hashlib
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Text
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.types import TypeDecorator
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
+if TYPE_CHECKING:
+    from cryptography.fernet import Fernet
+
 logger = get_logger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _get_fernet():
+def _get_fernet() -> "Fernet":
     """Derives a Fernet key from settings.field_encryption_key (or, if unset, falls back
     to jwt_secret_key so encryption is on by default rather than silently absent - see
     docs/GAP_AUDIT_PHASE0.md Phase 2 PHI section).
@@ -37,7 +42,7 @@ def _get_fernet():
     return Fernet(derived)
 
 
-class EncryptedText(TypeDecorator):
+class EncryptedText(TypeDecorator[str]):
     """Transparent application-level encryption for PHI text columns (Phase 2).
 
     Encrypts on write, decrypts on read. Existing plaintext rows (written before this
@@ -50,16 +55,18 @@ class EncryptedText(TypeDecorator):
     impl = Text
     cache_ok = True
 
-    def process_bind_param(self, value: str | None, dialect) -> str | None:
+    def process_bind_param(self, value: str | None, dialect: Dialect) -> str | None:
         if value is None:
             return None
-        return _get_fernet().encrypt(value.encode("utf-8")).decode("ascii")
+        encrypted: bytes = _get_fernet().encrypt(value.encode("utf-8"))
+        return encrypted.decode("ascii")
 
-    def process_result_value(self, value: str | None, dialect) -> str | None:
+    def process_result_value(self, value: str | None, dialect: Dialect) -> str | None:
         if value is None:
             return None
         try:
-            return _get_fernet().decrypt(value.encode("ascii")).decode("utf-8")
+            decrypted: bytes = _get_fernet().decrypt(value.encode("ascii"))
+            return decrypted.decode("utf-8")
         except Exception:
             # Not a valid Fernet token - assume legacy plaintext written before encryption
             # was enabled on this column, rather than raising and breaking every read.

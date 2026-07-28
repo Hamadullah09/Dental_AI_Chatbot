@@ -218,7 +218,7 @@ def evaluate_cases(service, cases: list[EvaluationCase], top_k: int = 5) -> list
 
 def summarize_results(results: list[EvaluationResult]) -> dict[str, Any]:
     if not results:
-        return {"total": 0, "passed": 0, "pass_rate": 0.0}
+        return {"total": 0, "passed": 0, "pass_rate": 0.0}  # nosec B105 - not a credential
 
     total = len(results)
     passed = sum(1 for r in results if r.passed)

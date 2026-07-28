@@ -93,3 +93,10 @@ This is a real, separate cluster addition — install and verify
 `kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1` lists the metric before relying on
 `api-hpa.yaml`'s Pods metric block. If you haven't set this up, the HPA still works as a
 CPU-only autoscaler (delete or comment out that metric block).
+
+## Blue-green / canary rollouts and Ollama model version changes
+
+Not covered in this file — see the "Blue-Green & Canary Deployment Strategy" section in
+`docs/DEPLOYMENT.md`, which covers both the docker-compose (office-PC) and Kubernetes
+paths, plus the separate playbook for validating an Ollama model swap against the
+retrieval quality gate before cutover.

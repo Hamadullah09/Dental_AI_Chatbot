@@ -10,7 +10,7 @@ from jose import JWTError, jwt
 from app.core.config import get_settings
 
 
-PASSWORD_ALGORITHM = "pbkdf2_sha256"
+PASSWORD_ALGORITHM = "pbkdf2_sha256"  # nosec B105 - algorithm name, not a credential
 PASSWORD_ITERATIONS = 260_000
 
 

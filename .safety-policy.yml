@@ -1,0 +1,35 @@
+# Phase 6: safety's default `ignore-unpinned-requirements: true` silently drops every
+# finding against a floating spec like `cryptography>=42.0.0` (this project's style, see
+# requirements.txt) - a scan against requirements.txt as-is always reports 0 vulnerabilities
+# found regardless of what's actually installed, which is worse than not scanning at all
+# since it looks clean. CI now scans a `pip freeze` of the resolved install instead (real
+# versions, real signal) and passes this policy file.
+#
+# The two ignores below are the only two remaining findings against the resolved
+# dependency set as of 2026-07-28 (166 mypy baseline commit and CI baseline gate landed
+# same day - see mypy_baseline.txt and scripts/mypy_baseline_gate.py). Both are for `ecdsa`
+# 0.19.2, a transitive dependency of `python-jose[cryptography]` (JWT signing in
+# app/core/security.py). This app signs/verifies JWTs with HS256 (HMAC, see
+# `jwt_algorithm` in app/core/config.py) - HS256 uses hmac, never elliptic-curve math, so
+# ecdsa's actual signing/verification code paths are unreachable at runtime here; the
+# package is present only because python-jose imports it unconditionally. The ecdsa
+# maintainers have stated they will not fix either issue (pure-Python can't offer
+# constant-time guarantees against side-channel attacks - documented in their own
+# README), so no version bump will ever resolve these while python-jose remains a
+# dependency. Swapping the JWT library is a separate tool-evaluation decision, out of
+# scope for this hardening pass.
+security:
+  ignore-unpinned-requirements: false
+  ignore-vulnerabilities:
+    64396:
+      reason: >
+        ecdsa side-channel/non-constant-time disclaimer, transitive via python-jose;
+        unreachable here since JWTs are signed with HS256 (hmac), not an EC algorithm.
+        No fix exists or is planned upstream.
+      expires: '2027-01-28'
+    64459:
+      reason: >
+        CVE-2024-23342 (Minerva timing attack on ecdsa), transitive via python-jose;
+        unreachable here since JWTs are signed with HS256 (hmac), not an EC algorithm.
+        No fix exists or is planned upstream.
+      expires: '2027-01-28'

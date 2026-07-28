@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -11,10 +11,13 @@ from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.models import ChatSession, Message, MessageRole, User, UserMemory
 
+if TYPE_CHECKING:
+    from app.core.redis import RedisCache
+
 logger = get_logger(__name__)
 
 
-def _memory_cache():
+def _memory_cache() -> "RedisCache":
     from app.core.redis import RedisCache
     settings = get_settings()
     return RedisCache(prefix="memory_context", ttl=settings.memory_context_cache_ttl_seconds)
@@ -93,7 +96,7 @@ class MemoryService:
         try:
             cached = _memory_cache().get(user_id)
             if cached is not None:
-                return cached
+                return dict(cached)
         except Exception:
             pass
 

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import Document, DocumentStatus
 from app.services.ingestion import IngestionService
+
+if TYPE_CHECKING:
+    from arq.connections import RedisSettings
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +129,7 @@ async def reindex_dentists_task(ctx: dict[str, Any]) -> dict[str, Any]:
             return {"status": "failed", "error": str(exc)}
 
 
-def _build_redis_settings(*, fast_fail: bool = False):
+def _build_redis_settings(*, fast_fail: bool = False) -> "RedisSettings":
     from arq.connections import RedisSettings
 
     settings = get_settings()

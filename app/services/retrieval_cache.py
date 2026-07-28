@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -47,7 +48,7 @@ def bump_generation() -> None:
         logger.debug("retrieval_cache.bump_generation_failed", exc_info=True)
 
 
-def _cache_key(question: str, rag_mode: str, top_k: int, filters: dict, generation: int) -> str:
+def _cache_key(question: str, rag_mode: str, top_k: int, filters: dict[str, Any], generation: int) -> str:
     normalized_question = " ".join(question.strip().lower().split())
     # sort_keys for a stable hash regardless of dict insertion order
     filters_repr = json.dumps(filters or {}, sort_keys=True, default=str)
@@ -55,7 +56,7 @@ def _cache_key(question: str, rag_mode: str, top_k: int, filters: dict, generati
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:40]
 
 
-def get_cached_chunks(question: str, rag_mode: str, top_k: int, filters: dict) -> list[dict] | None:
+def get_cached_chunks(question: str, rag_mode: str, top_k: int, filters: dict[str, Any]) -> list[dict[str, Any]] | None:
     try:
         key = _cache_key(question, rag_mode, top_k, filters, current_generation())
         return _results_cache().get(key)
@@ -63,7 +64,7 @@ def get_cached_chunks(question: str, rag_mode: str, top_k: int, filters: dict) -
         return None
 
 
-def cache_chunks(question: str, rag_mode: str, top_k: int, filters: dict, chunks: list[dict]) -> None:
+def cache_chunks(question: str, rag_mode: str, top_k: int, filters: dict[str, Any], chunks: list[dict[str, Any]]) -> None:
     try:
         key = _cache_key(question, rag_mode, top_k, filters, current_generation())
         _results_cache().set(key, chunks)

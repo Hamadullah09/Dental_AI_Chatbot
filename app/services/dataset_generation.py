@@ -213,6 +213,8 @@ def _openai_model_candidates(primary: str, fallback_csv: str) -> list[str]:
 
 
 def _generate_items_ollama(base_url: str, model: str, chunk: dict[str, Any], examples_per_chunk: int) -> list[dict[str, Any]]:
+    if not base_url.startswith(("http://", "https://")):
+        raise ValueError(f"ollama_base_url must be http(s), got: {base_url!r}")
     prompt = (
         "You generate expert-review draft dental Q&A from evidence chunks. "
         "Return valid JSON only.\n\n"
@@ -232,7 +234,7 @@ def _generate_items_ollama(base_url: str, model: str, chunk: dict[str, Any], exa
         method="POST",
     )
     try:
-        with urlopen(request, timeout=180) as response:
+        with urlopen(request, timeout=180) as response:  # nosec B310 - scheme validated above
             raw = json.loads(response.read().decode("utf-8"))
     except URLError as exc:
         raise RuntimeError(f"Ollama is not reachable at {base_url}. Start Ollama and pull model '{model}'. {exc}") from exc

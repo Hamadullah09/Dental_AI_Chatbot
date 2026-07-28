@@ -26,3 +26,15 @@ asyncio_mode = "auto"
 [tool.black]
 line-length = 120
 target-version = ["py311"]
+
+[tool.bandit]
+# B110 (try/except/pass) is excluded codebase-wide rather than per-instance: it's the
+# deliberate fail-open pattern used throughout the resilience/caching layer (Redis
+# cache lookups, circuit breaker bookkeeping, best-effort audit logging) - see
+# app/core/resilience.py, app/services/degradation.py, app/services/embeddings.py,
+# app/services/memory.py. Every other bandit finding is either fixed outright or
+# suppressed at the specific line with a `# nosec <id>` comment explaining why (see
+# app/core/resilience.py, app/core/security.py, app/services/evaluation.py,
+# app/services/dataset_generation.py, app/scrapers/crawler.py), so CI (Phase 6) can
+# treat bandit as a real, blocking gate instead of `|| true`.
+skips = ["B110"]
