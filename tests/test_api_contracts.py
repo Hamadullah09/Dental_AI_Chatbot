@@ -7,13 +7,15 @@ OpenAPI schema, should fail one of these even if every other test (which typical
 around the exact response shape) still passes.
 """
 
+from typing import Any
+
 from tests.conftest import create_admin_user, register_user
 
 
-def _openapi_schema(client):
+def _openapi_schema(client: Any) -> dict[str, Any]:
     response = client.get("/openapi.json")
     assert response.status_code == 200
-    return response.json()
+    return dict(response.json())
 
 
 def test_openapi_schema_is_generated(client):
@@ -104,7 +106,7 @@ def test_protected_endpoints_reject_missing_auth(client):
         ("get", "/api/admin/documents"),
         ("get", "/api/admin/feedback"),
     ]:
-        kwargs = {"json": {}} if method == "post" else {}
+        kwargs: dict[str, Any] = {"json": {}} if method == "post" else {}
         response = getattr(client, method)(path, **kwargs)
         assert response.status_code == 401, f"{method.upper()} {path} should require auth, got {response.status_code}"
 
