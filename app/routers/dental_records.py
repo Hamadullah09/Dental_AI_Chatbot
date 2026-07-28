@@ -4,7 +4,7 @@ import qrcode
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pypdf import PdfWriter, PdfReader
 from reportlab.lib import colors
@@ -23,6 +23,7 @@ from reportlab.platypus import (
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.audit import log_access
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.deps import get_current_user, require_admin
@@ -274,6 +275,7 @@ def search_dental_records(
 @router.get("/{record_id}", response_model=DentalRecordRead)
 def get_dental_record(
     record_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DentalRecordRead:
@@ -288,12 +290,21 @@ def get_dental_record(
         if not dentist or record.dentist_id != dentist.id:
             raise HTTPException(status_code=403, detail="Not authorized")
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="view_dental_record",
+        resource_type="dental_record",
+        resource_id=record.id,
+        request=request,
+    )
     return DentalRecordRead.from_orm_model(record)
 
 
 @router.post("", response_model=DentalRecordRead, status_code=status.HTTP_201_CREATED)
 def create_dental_record(
     payload: DentalRecordCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DentalRecordRead:
@@ -333,6 +344,14 @@ def create_dental_record(
     db.commit()
     db.refresh(record)
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="create_dental_record",
+        resource_type="dental_record",
+        resource_id=record.id,
+        request=request,
+    )
     return DentalRecordRead.from_orm_model(record)
 
 
@@ -340,6 +359,7 @@ def create_dental_record(
 def update_dental_record(
     record_id: str,
     payload: DentalRecordUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DentalRecordRead:
@@ -366,12 +386,21 @@ def update_dental_record(
     db.commit()
     db.refresh(record)
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="update_dental_record",
+        resource_type="dental_record",
+        resource_id=record.id,
+        request=request,
+    )
     return DentalRecordRead.from_orm_model(record)
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dental_record(
     record_id: str,
+    request: Request,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> None:
@@ -379,12 +408,22 @@ def delete_dental_record(
     if not record:
         raise HTTPException(status_code=404, detail="Dental record not found")
     db.delete(record)
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="delete_dental_record",
+        resource_type="dental_record",
+        resource_id=record_id,
+        request=request,
+        commit=False,
+    )
     db.commit()
 
 
 @router.get("/{record_id}/pdf")
 def download_dental_record_pdf(
     record_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
@@ -405,6 +444,14 @@ def download_dental_record_pdf(
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="export_dental_record_pdf",
+        resource_type="dental_record",
+        resource_id=record.id,
+        request=request,
+    )
     pdf_bytes = generate_dental_record_pdf(record, patient, dentist)
 
     return StreamingResponse(

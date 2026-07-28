@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.deps import require_admin
-from app.models import Document, DocumentIngestionLog, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
+from app.models import AuditLog, Document, DocumentIngestionLog, DocumentStatus, DocumentType, ReviewStatus, TrustLevel, User
 from app.schemas import DatasetGenerationRequest, DatasetGenerationStatus, DocumentIngestionLogRead, DocumentRead
 from app.services.dataset_generation import REVIEW_CSV_PATH, export_review_csv, generate_dataset_background, read_dataset_status
 from app.services.documents import save_upload
@@ -201,3 +201,40 @@ def delete_document(
     db.commit()
     if storage_path.exists():
         storage_path.unlink()
+
+
+@router.post("/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_user_sessions(
+    user_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> None:
+    """Sign a user out everywhere: revokes every stored refresh token and blocklists every
+    access token issued before now (Phase 2 - incident response for a compromised
+    account). Access tokens are stateless JWTs, so without this a compromised token would
+    stay valid until its natural expiry regardless of anything else we do."""
+    from datetime import datetime, timezone
+
+    from app.core.token_blocklist import revoke_all_tokens_for_user
+    from app.models import RefreshToken
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user_id,
+        RefreshToken.revoked.is_(False),
+    ).update({"revoked": True, "revoked_at": datetime.now(timezone.utc)})
+    db.commit()
+
+    revoke_all_tokens_for_user(user_id)
+
+    log = AuditLog(
+        user_id=admin.id,
+        action="revoke_user_sessions",
+        resource_type="user",
+        resource_id=user_id,
+    )
+    db.add(log)
+    db.commit()

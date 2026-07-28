@@ -4,7 +4,7 @@ import qrcode
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pypdf import PdfWriter, PdfReader
 from reportlab.lib import colors
@@ -23,6 +23,7 @@ from reportlab.platypus import (
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.audit import log_access
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.deps import get_current_user, require_admin
@@ -292,6 +293,7 @@ def search_prescriptions(
 @router.get("/{prescription_id}", response_model=PrescriptionRead)
 def get_prescription(
     prescription_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrescriptionRead:
@@ -306,12 +308,21 @@ def get_prescription(
         if not dentist or prescription.dentist_id != dentist.id:
             raise HTTPException(status_code=403, detail="Not authorized")
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="view_prescription",
+        resource_type="prescription",
+        resource_id=prescription.id,
+        request=request,
+    )
     return PrescriptionRead.from_orm_model(prescription)
 
 
 @router.post("", response_model=PrescriptionRead, status_code=status.HTTP_201_CREATED)
 def create_prescription(
     payload: PrescriptionCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrescriptionRead:
@@ -353,6 +364,14 @@ def create_prescription(
     db.commit()
     db.refresh(prescription)
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="create_prescription",
+        resource_type="prescription",
+        resource_id=prescription.id,
+        request=request,
+    )
     return PrescriptionRead.from_orm_model(prescription)
 
 
@@ -360,6 +379,7 @@ def create_prescription(
 def update_prescription(
     prescription_id: str,
     payload: PrescriptionUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrescriptionRead:
@@ -383,12 +403,21 @@ def update_prescription(
     db.commit()
     db.refresh(prescription)
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="update_prescription",
+        resource_type="prescription",
+        resource_id=prescription.id,
+        request=request,
+    )
     return PrescriptionRead.from_orm_model(prescription)
 
 
 @router.delete("/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_prescription(
     prescription_id: str,
+    request: Request,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> None:
@@ -396,12 +425,22 @@ def delete_prescription(
     if not prescription:
         raise HTTPException(status_code=404, detail="Prescription not found")
     db.delete(prescription)
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="delete_prescription",
+        resource_type="prescription",
+        resource_id=prescription_id,
+        request=request,
+        commit=False,
+    )
     db.commit()
 
 
 @router.get("/{prescription_id}/pdf")
 def download_prescription_pdf(
     prescription_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
@@ -422,6 +461,14 @@ def download_prescription_pdf(
     if not patient or not dentist:
         raise HTTPException(status_code=404, detail="Associated user/dentist not found")
 
+    log_access(
+        db,
+        user_id=current_user.id,
+        action="export_prescription_pdf",
+        resource_type="prescription",
+        resource_id=prescription.id,
+        request=request,
+    )
     pdf_bytes = generate_prescription_pdf(prescription, patient, dentist)
 
     return StreamingResponse(

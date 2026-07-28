@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, Stri
 from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.encryption import EncryptedText
 
 
 def uuid_str() -> str:
@@ -420,13 +421,14 @@ class Prescription(Base):
     patient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     dentist_id: Mapped[str] = mapped_column(ForeignKey("dentists.id", ondelete="CASCADE"), nullable=False, index=True)
     appointment_id: Mapped[str] = mapped_column(ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    diagnosis: Mapped[str] = mapped_column(Text, nullable=False)
-    medicines: Mapped[str] = mapped_column(Text, nullable=False)
-    dosage: Mapped[str] = mapped_column(Text, nullable=False)
-    frequency: Mapped[str] = mapped_column(Text, nullable=False)
-    duration: Mapped[str] = mapped_column(Text, nullable=False)
-    instructions: Mapped[str | None] = mapped_column(Text)
-    notes: Mapped[str | None] = mapped_column(Text)
+    # PHI (Phase 2): encrypted at rest. See app/core/encryption.py.
+    diagnosis: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    medicines: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    dosage: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    frequency: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    duration: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    instructions: Mapped[str | None] = mapped_column(EncryptedText)
+    notes: Mapped[str | None] = mapped_column(EncryptedText)
     follow_up_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attachment_path: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -444,16 +446,17 @@ class DentalRecord(Base):
     patient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     dentist_id: Mapped[str | None] = mapped_column(ForeignKey("dentists.id", ondelete="SET NULL"), nullable=True, index=True)
     appointment_id: Mapped[str | None] = mapped_column(ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
-    previous_problems: Mapped[str | None] = mapped_column(Text)
-    diagnoses: Mapped[str | None] = mapped_column(Text)
-    treatments: Mapped[str | None] = mapped_column(Text)
-    surgeries: Mapped[str | None] = mapped_column(Text)
-    allergies: Mapped[str | None] = mapped_column(Text)
-    medications: Mapped[str | None] = mapped_column(Text)
+    # PHI (Phase 2): encrypted at rest. See app/core/encryption.py.
+    previous_problems: Mapped[str | None] = mapped_column(EncryptedText)
+    diagnoses: Mapped[str | None] = mapped_column(EncryptedText)
+    treatments: Mapped[str | None] = mapped_column(EncryptedText)
+    surgeries: Mapped[str | None] = mapped_column(EncryptedText)
+    allergies: Mapped[str | None] = mapped_column(EncryptedText)
+    medications: Mapped[str | None] = mapped_column(EncryptedText)
     xrays_path: Mapped[str | None] = mapped_column(String(1000))
     reports_path: Mapped[str | None] = mapped_column(String(1000))
     images_path: Mapped[str | None] = mapped_column(String(1000))
-    notes: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(EncryptedText)
     follow_up_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

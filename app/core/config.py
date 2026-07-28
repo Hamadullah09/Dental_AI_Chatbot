@@ -18,8 +18,17 @@ class Settings(BaseSettings):
 
     jwt_secret_key: str = Field(default="change-me-in-production")
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24
+    # Reduced from 24h (Phase 2 - a 24h-lived, unrevocable-by-default JWT is a large
+    # compromise window). NOT shortened to the more typical 15-30 min because the frontend
+    # has no silent-refresh-on-401 interceptor yet; doing that first is a recommended
+    # follow-up, after which this can drop further. The access-token blocklist
+    # (app/core/token_blocklist.py) now provides immediate revocation independent of this
+    # value, which was the more important gap.
+    access_token_expire_minutes: int = 120
     refresh_token_expire_days: int = 7
+    # PHI field encryption (Phase 2). Set from a real secrets manager/KMS in production -
+    # falls back to deriving from jwt_secret_key if unset (see app/core/encryption.py).
+    field_encryption_key: str | None = None
     allow_admin_registration: bool = False
     admin_email: str | None = None
     admin_password: str | None = None
@@ -189,6 +198,13 @@ class Settings(BaseSettings):
     rate_limit_chat_per_minute: int = 20
     rate_limit_auth_per_minute: int = 10
     rate_limit_upload_per_minute: int = 5
+    # Per-IP ceilings (Phase 2) sit alongside the per-user ones above: per-user catches a
+    # single compromised/malicious account, per-IP catches abuse spread across many
+    # accounts (or anonymous-ish abuse) from one source. Deliberately more generous than
+    # the per-user limits since an IP can legitimately represent many users behind NAT/a
+    # shared proxy.
+    rate_limit_chat_per_ip_per_minute: int = 60
+    rate_limit_upload_per_ip_per_minute: int = 15
 
     streaming_enabled: bool = True
     streaming_chunk_size: int = 10

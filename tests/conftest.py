@@ -50,10 +50,23 @@ def reset_circuit_breakers():
 
 @pytest.fixture(autouse=True)
 def clean_database():
+    # Deliberately does NOT call engine.dispose() or delete the sqlite file between
+    # tests. SQLite runs in WAL mode (app/core/database.py) which keeps -wal/-shm
+    # companion files that Windows can hold a lock on slightly after a connection
+    # closes; disposing the engine and unlinking the file per-test raced with that lock
+    # intermittently, occasionally leaving the next test with a missing/half-deleted
+    # database ("no such table: users") when many tests ran back-to-back. drop_all +
+    # create_all alone gives full schema/data isolation between tests without ever
+    # touching the file on disk, so the risky dispose+unlink dance isn't needed.
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_database_file():
+    yield
     engine.dispose()
     db_path = ROOT / "test_dental_ai.db"
     if db_path.exists():

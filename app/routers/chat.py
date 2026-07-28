@@ -37,6 +37,17 @@ def _idempotency_scope(user_id: str, key: str) -> str:
     return f"{user_id}:{key}"
 
 
+def sanitize_user_text(text: str) -> str:
+    """Strips HTML/script content from user-supplied chat text before it reaches the LLM
+    context or gets persisted (Phase 2). Wires up SecurityManager.sanitize_input(), which
+    existed but was never called from any request path - user questions previously went
+    straight from the request body into the prompt and the database with no sanitization
+    at all."""
+    from app.services.security import security_manager
+
+    return security_manager.sanitize_input(text)
+
+
 logger = get_logger(__name__)
 router = APIRouter(tags=["chat"])
 
@@ -95,10 +106,14 @@ def chat(
         f"user:{current_user.id}", settings.rate_limit_chat_per_minute
     ):
         raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
+    if request.client and chat_rate_limiter.is_rate_limited(
+        f"ip:{request.client.host}", settings.rate_limit_chat_per_ip_per_minute
+    ):
+        raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
 
     start = time.perf_counter()
 
-    question = payload.question.strip()
+    question = sanitize_user_text(payload.question.strip())
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
@@ -307,8 +322,12 @@ async def chat_stream(
         f"user:{current_user.id}", settings.rate_limit_chat_per_minute
     ):
         raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
+    if request.client and chat_rate_limiter.is_rate_limited(
+        f"ip:{request.client.host}", settings.rate_limit_chat_per_ip_per_minute
+    ):
+        raise HTTPException(status_code=429, detail=settings.chatbot_rate_limit_message)
 
-    question = payload.question.strip()
+    question = sanitize_user_text(payload.question.strip())
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
@@ -417,8 +436,12 @@ async def chat_stream(
     )
 
 
+upload_rate_limiter = RateLimiter(prefix="ratelimit:upload")
+
+
 @router.post("/chat/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
 def upload_chat_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     book_title: str | None = Form(None),
@@ -426,6 +449,14 @@ def upload_chat_document(
     current_user: User = Depends(get_current_user),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> Document:
+    settings = get_settings()
+    if upload_rate_limiter.is_rate_limited(f"user:{current_user.id}", settings.rate_limit_upload_per_minute):
+        raise HTTPException(status_code=429, detail="Too many uploads. Please wait a moment and try again.")
+    if request.client and upload_rate_limiter.is_rate_limited(
+        f"ip:{request.client.host}", settings.rate_limit_upload_per_ip_per_minute
+    ):
+        raise HTTPException(status_code=429, detail="Too many uploads. Please wait a moment and try again.")
+
     if idempotency_key:
         cached_document_id = _idempotency_cache().get(_idempotency_scope(current_user.id, idempotency_key))
         if cached_document_id:

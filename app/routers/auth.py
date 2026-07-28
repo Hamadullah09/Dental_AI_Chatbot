@@ -18,6 +18,7 @@ from app.deps import get_current_user
 from app.models import AuditLog, RefreshToken, User, UserRole
 from app.schemas import LoginRequest, Token, TokenRefreshRequest, UserCreate, UserRead
 from app.core.redis import RateLimiter
+from app.core.token_blocklist import bind_refresh_token_to_device, refresh_token_device_mismatch, revoke_access_token
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -36,15 +37,22 @@ def _log_audit(db: Session, user_id: str | None, action: str, resource_type: str
     db.add(log)
 
 
-def _create_refresh_token_with_expiry(db: Session, user: User) -> str:
+def _create_refresh_token_with_expiry(db: Session, user: User, request: Request | None = None) -> str:
     settings = get_settings()
     refresh_token = create_refresh_token(user.id)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    token_hash = hash_token(refresh_token)
     db.add(RefreshToken(
         user_id=user.id,
-        token_hash=hash_token(refresh_token),
+        token_hash=token_hash,
         expires_at=expires_at,
     ))
+    if request is not None:
+        bind_refresh_token_to_device(
+            token_hash,
+            request.headers.get("user-agent", ""),
+            ttl_seconds=settings.refresh_token_expire_days * 86400,
+        )
     return refresh_token
 
 
@@ -76,7 +84,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
     db.flush()
 
     access_token = create_access_token(user.id, {"role": user.role.value})
-    refresh_token = _create_refresh_token_with_expiry(db, user)
+    refresh_token = _create_refresh_token_with_expiry(db, user, request)
 
     _log_audit(db, user.id, "register", "user", request, f"Role: {role.value}")
     db.commit()
@@ -101,7 +109,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     access_token = create_access_token(user.id, {"role": user.role.value})
-    refresh_token = _create_refresh_token_with_expiry(db, user)
+    refresh_token = _create_refresh_token_with_expiry(db, user, request)
 
     _log_audit(db, user.id, "login", "user", request)
     db.commit()
@@ -140,11 +148,17 @@ def refresh_token(payload: TokenRefreshRequest, request: Request, db: Session = 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Soft device-binding check (Phase 2, non-blocking - see
+    # token_blocklist.refresh_token_device_mismatch docstring for why this doesn't reject
+    # the request outright).
+    if refresh_token_device_mismatch(token_hash, request.headers.get("user-agent", "")):
+        _log_audit(db, user.id, "token_refresh_device_mismatch", "user", request)
+
     stored_token.revoked = True
     stored_token.revoked_at = datetime.now(timezone.utc)
 
     new_access = create_access_token(user.id, {"role": user.role.value})
-    new_refresh = _create_refresh_token_with_expiry(db, user)
+    new_refresh = _create_refresh_token_with_expiry(db, user, request)
 
     _log_audit(db, user.id, "token_refresh", "user", request)
     db.commit()
@@ -157,7 +171,12 @@ def refresh_token(payload: TokenRefreshRequest, request: Request, db: Session = 
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(payload: TokenRefreshRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
+def logout(
+    payload: TokenRefreshRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
     token_hash = hash_token(payload.refresh_token)
     stored_token = db.query(RefreshToken).filter(
         RefreshToken.token_hash == token_hash,
@@ -167,6 +186,15 @@ def logout(payload: TokenRefreshRequest, current_user: User = Depends(get_curren
         stored_token.revoked = True
         stored_token.revoked_at = datetime.now(timezone.utc)
         db.commit()
+
+    # Revoke the access token used for THIS request too - previously logout only revoked
+    # the refresh token, leaving the (up to access_token_expire_minutes-old) access token
+    # fully valid until its natural expiry even after the user explicitly logged out.
+    access_payload = getattr(request.state, "access_token_payload", None)
+    if access_payload:
+        settings = get_settings()
+        remaining_seconds = max(1, int(access_payload.get("exp", 0) - datetime.now(timezone.utc).timestamp()))
+        revoke_access_token(access_payload.get("jti"), ttl_seconds=min(remaining_seconds, settings.access_token_expire_minutes * 60))
 
 
 @router.get("/me", response_model=UserRead)

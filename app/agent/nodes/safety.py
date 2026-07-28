@@ -86,6 +86,29 @@ def _check_prompt_injection(question_lower: str) -> list[str]:
     return flags
 
 
+def neutralize_retrieved_content(text: str) -> tuple[str, list[str]]:
+    """Prompt-injection defense for RETRIEVED document content (Phase 2), not just user
+    input: run_safety_check() above only ever scanned state.question. A malicious or
+    compromised uploaded PDF could contain injection-style text ('ignore all previous
+    instructions...') that would otherwise flow unfiltered into context_text and then the
+    system prompt. Matched spans are redacted in place rather than dropping the whole
+    chunk, since legitimate dental text could loosely match one pattern without the rest
+    being unsafe."""
+    matched: list[str] = []
+
+    def _redact(pattern: str, s: str) -> str:
+        def _sub(m: re.Match) -> str:
+            matched.append(pattern)
+            return "[redacted: instructional content in source document]"
+
+        return re.sub(pattern, _sub, s, flags=re.IGNORECASE)
+
+    cleaned = text
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        cleaned = _redact(pattern, cleaned)
+    return cleaned, matched
+
+
 def run_safety_check(state: AgentState) -> AgentState:
     start = time.perf_counter()
     question_lower = state.question.lower()

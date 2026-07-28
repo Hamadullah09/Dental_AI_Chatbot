@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
 from app.core.logging import setup_logging, get_logger
 from app.core.redis import close_redis
+from app.core.security import assert_no_default_secrets_in_production
 from app.middleware.metrics import PrometheusMiddleware, metrics_endpoint
 from app.middleware.request import RequestIDMiddleware, SecurityHeadersMiddleware, UserContextMiddleware
 from app.routers import admin, appointments, auth, chat, dashboard, dentists, dental_records, health, prescriptions, settings as settings_router
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    assert_no_default_secrets_in_production()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.extracted_visuals_dir.mkdir(parents=True, exist_ok=True)
     init_db()

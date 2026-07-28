@@ -347,6 +347,7 @@ def build_context(state: AgentState) -> AgentState:
     context_parts = []
     seen_content = set()
     total_chars = 0
+    injection_flags_total = 0
     max_context_chars = getattr(settings, "context_compression_max_chars", 1000) * len(chunks_for_context)
 
     for i, chunk in enumerate(chunks_for_context):
@@ -374,6 +375,13 @@ def build_context(state: AgentState) -> AgentState:
         except Exception:
             compressed = text[:1000]
 
+        try:
+            from app.agent.nodes.safety import neutralize_retrieved_content
+            compressed, injection_matches = neutralize_retrieved_content(compressed)
+            injection_flags_total += len(injection_matches)
+        except Exception:
+            pass
+
         citation = chunk.get("citation", {})
         doc_name = citation.get("document_name", "Unknown")
         page = citation.get("page_number", "")
@@ -395,7 +403,11 @@ def build_context(state: AgentState) -> AgentState:
         state.context_text = f"[Previous conversation context]\n{state.memory_context}\n\n---\n\n{state.context_text}"
 
     duration_ms = (time.perf_counter() - start) * 1000
-    state.add_trace("context_builder", "completed", f"{len(context_parts)} context blocks, {total_chars} chars", duration_ms)
+    detail = f"{len(context_parts)} context blocks, {total_chars} chars"
+    if injection_flags_total:
+        detail += f", {injection_flags_total} injection pattern(s) redacted from source content"
+        logger.warning(f"context_builder.injection_content_redacted count={injection_flags_total}")
+    state.add_trace("context_builder", "completed", detail, duration_ms)
     return state
 
 

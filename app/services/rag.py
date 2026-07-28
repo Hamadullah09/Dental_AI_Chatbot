@@ -1086,7 +1086,7 @@ class RAGService:
             logger.exception("rag.general_fallback_model.failed")
             return service_unavailable_answer(question)
 
-    def self_check_answer(self, question: str, answer: str, chunks: list[RetrievedChunk]) -> dict:
+    def self_check_answer(self, question: str, answer: str, chunks: list[RetrievedChunk], user_role: str | None = None) -> dict:
         reasons: list[str] = []
         context = " ".join(chunk.text for chunk in chunks)
         answer_terms = question_keywords(answer)
@@ -1095,7 +1095,7 @@ class RAGService:
             grounded_terms = [term for term in answer_terms if term in context_l or term in question.lower()]
             if len(grounded_terms) / max(len(answer_terms), 1) < 0.25:
                 reasons.append("ungrounded")
-        if contains_prescribing_language(answer):
+        if contains_prescribing_language(answer, user_role=user_role):
             reasons.append("prescribing_language")
         if needs_safety_note(question) and "consult" not in answer.lower() and "dentist" not in answer.lower():
             reasons.append("missing_safety_note")
@@ -1492,7 +1492,16 @@ def retrieval_confidence(chunks: list[RetrievedChunk]) -> float:
     return sum(scores) / len(scores)
 
 
-def contains_prescribing_language(answer: str) -> bool:
+def contains_prescribing_language(answer: str, user_role: str | None = None) -> bool:
+    """Flags dosage/prescribing-style language so patient/student answers get a refusal +
+    safety note prepended (see self_check_answer). Deliberately skipped for the dentist
+    role (Phase 2 policy decision): a licensed dentist asking a clinical-decision-support
+    question is exactly the audience Phase 5a's persona spec says should receive full
+    dosage/protocol detail - blanket-blocking would contradict that requirement. Flagging
+    this choice explicitly rather than deciding it silently; confirm with product owner if
+    a different treatment (e.g. requiring dentist-role verification) is wanted instead."""
+    if normalize_user_role(user_role) == "dentist":
+        return False
     normalized = answer.lower()
     prescribing_patterns = [
         r"\btake\s+\d+",
