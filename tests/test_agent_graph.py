@@ -124,6 +124,114 @@ def test_populate_sources_and_visuals_caps_at_five_and_two():
     assert len(state.visuals) == 2
 
 
+def test_generate_direct_answer_reports_service_unavailable_when_llm_fails(monkeypatch):
+    """Regression test for docs/PRODUCT_BENCHMARK.md finding #2: when retrieval finds
+    real chunks but LLM generation fails (Ollama down), this used to swallow the error
+    into `state.answer = settings.medical_disclaimer` while leaving answer_mode at its
+    stale "rag_grounded" default - a hollow "successful" answer with no sources and no
+    real content, indistinguishable from a real grounded response. It must now report
+    the same honest "service_unavailable" mode the streaming path already uses, so
+    chat.py's `answer_mode == "service_unavailable"` check turns it into a real 503."""
+    from app.agent.nodes.planner import generate_direct_answer
+
+    fake_chunk = type(
+        "FakeChunk",
+        (),
+        {
+            "text": "Fluoride prevents cavities.",
+            "citation": type(
+                "Citation",
+                (),
+                {"source_type": "pdf", "document_id": "doc-1", "document_name": "Textbook.pdf",
+                 "page_number": 3, "chunk_index": 1, "score": 0.8},
+            )(),
+        },
+    )()
+
+    class FakeRAG:
+        def retrieve(self, *args, **kwargs):
+            return [fake_chunk]
+
+    class FakeLLM:
+        def generate(self, *args, **kwargs):
+            from app.services.llm import OllamaCircuitOpenError
+            raise OllamaCircuitOpenError("Circuit breaker 'ollama' is open")
+
+    monkeypatch.setattr("app.services.rag.RAGService", FakeRAG)
+    monkeypatch.setattr("app.services.llm.LLMService", FakeLLM)
+
+    state = AgentState(question="What is tooth decay?")
+    result = generate_direct_answer(state)
+
+    assert result.answer_mode == "service_unavailable"
+    assert "temporarily unavailable" in result.answer.lower()
+    assert result.sources == []
+
+
+def test_generate_direct_answer_tags_service_unavailable_fallback_text(monkeypatch):
+    """Same failure, different code path: no chunks at all, so generate_direct_answer
+    calls generate_general_fallback_answer(), which already catches LLMGenerationError
+    internally and returns the same "service is temporarily unavailable" string. Before
+    this fix that string was labeled answer_mode="general_fallback" - a normal-looking
+    success - instead of the service_unavailable mode chat.py actually checks for."""
+    from app.agent.nodes.planner import generate_direct_answer
+    from app.services.rag import service_unavailable_answer
+
+    class FakeRAG:
+        def retrieve(self, *args, **kwargs):
+            return []
+
+        def generate_general_fallback_answer(self, question, user_role=None):
+            return service_unavailable_answer(question)
+
+    monkeypatch.setattr("app.services.rag.RAGService", FakeRAG)
+
+    state = AgentState(question="What is tooth decay?")
+    result = generate_direct_answer(state)
+
+    assert result.answer_mode == "service_unavailable"
+    assert "temporarily unavailable" in result.answer.lower()
+
+
+def test_generate_direct_answer_still_grounds_normally_when_llm_succeeds(monkeypatch):
+    """Guard the happy path against the fix above: a normal, successful generation must
+    still report rag_grounded with real sources, not get swept into service_unavailable."""
+    from app.agent.nodes.planner import generate_direct_answer
+
+    fake_chunk = type(
+        "FakeChunk",
+        (),
+        {
+            "text": "Fluoride prevents cavities.",
+            "citation": type(
+                "Citation",
+                (),
+                {"source_type": "pdf", "document_id": "doc-1", "document_name": "Textbook.pdf",
+                 "page_number": 3, "chunk_index": 1, "score": 0.8},
+            )(),
+        },
+    )()
+
+    class FakeRAG:
+        def retrieve(self, *args, **kwargs):
+            return [fake_chunk]
+
+    class FakeLLM:
+        def generate(self, *args, **kwargs):
+            return "Tooth decay is caused by bacteria producing acid. [Source 1]"
+
+    monkeypatch.setattr("app.services.rag.RAGService", FakeRAG)
+    monkeypatch.setattr("app.services.llm.LLMService", FakeLLM)
+
+    state = AgentState(question="What is tooth decay?")
+    result = generate_direct_answer(state)
+
+    assert result.answer_mode == "rag_grounded"
+    assert "acid" in result.answer.lower()
+    assert len(result.sources) == 1
+    assert result.sources[0]["document_name"] == "Textbook.pdf"
+
+
 def test_run_self_check_and_adjust_answer_is_exception_safe(monkeypatch):
     from app.agent.graph import run_self_check_and_adjust_answer
 

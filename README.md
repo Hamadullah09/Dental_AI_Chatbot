@@ -468,6 +468,14 @@ The admin account is auto-created from your `.env` settings.
 2. Register as Patient or Student
 3. Login with your credentials
 
+### Dentist Accounts (Verified, Not Self-Service)
+
+Registering with the **Dentist** role requires a license number and creates a normal,
+immediately-usable **patient** account plus a pending verification request - it does not
+grant clinical access by itself. An admin reviews and approves it from
+**Account menu → Dentist Requests** (or `GET/POST /api/admin/dentist-requests/...`),
+which is what actually flips the account to the dentist role.
+
 ---
 
 ## 12. Upload Dental Documents
@@ -854,6 +862,7 @@ This README covers first-time deployment. For everything else:
 
 | Doc | What it's for |
 |---|---|
+| [docs/PRODUCT_BENCHMARK.md](docs/PRODUCT_BENCHMARK.md) | Live, browser-tested audit of what actually works today, what was broken, and the product roadmap |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system actually works (retrieval, the LangGraph agent, roles) |
 | [docs/adr/](docs/adr/) | Why it's built this way - one record per significant design decision |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | What to do when Ollama/Qdrant is down, latency spikes, or citation quality drops |
@@ -862,6 +871,28 @@ This README covers first-time deployment. For everything else:
 | [docs/API.md](docs/API.md) | API reference (also served live at `/docs` per the running app) |
 | [k8s/README.md](k8s/README.md) | Kubernetes deployment path, if not using docker-compose |
 | [docs/GAP_AUDIT_PHASE0.md](docs/GAP_AUDIT_PHASE0.md) | The audit that motivated this hardening pass, for historical context |
+
+### Recent fixes (2026-07-29)
+
+Four gaps found by the live product audit above have since been closed - see
+[docs/PRODUCT_BENCHMARK.md](docs/PRODUCT_BENCHMARK.md) for the full detail and
+[docs/adr/0015](docs/adr/0015-safety-scope-disclosure-over-unvalidated-classifier.md) /
+[0016](docs/adr/0016-human-review-workflow-for-unreviewed-conversations.md) for the two
+that involved a product/policy decision:
+
+- The non-streaming `/api/chat` endpoint no longer returns a hollow, mislabeled-success
+  answer when the LLM is unreachable - it now reports the same honest
+  `service_unavailable` state the streaming path already did.
+- Chat History Retention (Settings) is now actually persisted and enforced by a daily
+  background job, instead of being a control with nothing behind it.
+- Requesting a Dentist account during registration now goes somewhere - see "Dentist
+  Accounts" above.
+- A human expert review workflow (**Account menu → Expert Reviews**) lets an admin
+  sample real conversations against a faithfulness/safety/citation-accuracy rubric,
+  distinct from user-submitted feedback. The underlying safety/self-check system is
+  still pattern-based, not a clinically validated classifier - that limitation is now an
+  explicit, in-product disclosure (linked from the chat disclaimer) rather than something
+  only documented in code comments.
 
 ---
 

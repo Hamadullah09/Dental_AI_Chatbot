@@ -64,6 +64,18 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # Phase 8: registering as "dentist" is rejected outright (app/routers/auth.py) with
+    # no way for an admin to ever grant one afterward - see
+    # docs/PRODUCT_BENCHMARK.md finding #1. A prospective dentist now registers as a
+    # normal patient account (fully usable in the meantime) plus a verification request;
+    # role only becomes UserRole.dentist once an admin approves it
+    # (app/routers/admin.py's /admin/dentist-requests endpoints).
+    dentist_verification_status: Mapped[str] = mapped_column(String(20), default="none")
+    dentist_license_number: Mapped[str | None] = mapped_column(String(100))
+    dentist_clinic_name: Mapped[str | None] = mapped_column(String(255))
+    dentist_verification_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dentist_verification_notes: Mapped[str | None] = mapped_column(Text)
+
     chat_sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     documents: Mapped[list["Document"]] = relationship(back_populates="uploaded_by_user")
 
@@ -240,6 +252,31 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     message: Mapped[Message] = relationship(back_populates="feedback")
+
+
+class ExpertReview(Base):
+    """Phase 8 (docs/PRODUCT_BENCHMARK.md: 'a human expert review workflow for
+    unreviewed conversations, distinct from user-submitted feedback'). Feedback (above)
+    is a patient's own rating of one answer; this is a domain expert deliberately
+    sampling real conversations against a fixed rubric - faithfulness, safety, citation
+    accuracy - to track answer quality over time independent of whether any user
+    happened to leave feedback on that specific turn. One row per reviewed message
+    (unique message_id) - a reviewer revising their own assessment updates the existing
+    row rather than creating a second one."""
+
+    __tablename__ = "expert_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    faithfulness: Mapped[str] = mapped_column(String(20), nullable=False)
+    safety: Mapped[str] = mapped_column(String(20), nullable=False)
+    citation_accuracy: Mapped[str] = mapped_column(String(20), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    message: Mapped[Message] = relationship()
 
 
 class RefreshToken(Base):
@@ -477,8 +514,17 @@ class UserSettings(Base):
     email_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
     sms_notifications: Mapped[bool] = mapped_column(Boolean, default=False)
     browser_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+    push_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
     appointment_reminders: Mapped[bool] = mapped_column(Boolean, default=True)
     data_sharing: Mapped[bool] = mapped_column(Boolean, default=False)
+    data_sharing_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    hipaa_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_disclaimer_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 8 fix: the settings UI (frontend/app/settings/page.tsx) has offered this
+    # control since it was built, but nothing on the backend ever persisted or enforced
+    # it - see docs/PRODUCT_BENCHMARK.md finding #4. enforce_chat_retention_task
+    # (app/workers/tasks.py) is what actually acts on this value now.
+    chat_history_retention_days: Mapped[int] = mapped_column(Integer, default=90)
     two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     two_factor_secret: Mapped[str | None] = mapped_column(String(100))
     ai_streaming: Mapped[bool] = mapped_column(Boolean, default=True)

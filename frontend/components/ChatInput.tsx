@@ -193,7 +193,10 @@ export function ChatInput({
       </form>
       <div className="text-center mt-2">
         <p className="text-[10px] text-dental-textSecondary">
-          {config.disclaimer_banner}
+          {config.disclaimer_banner}{" "}
+          <a href="/help" className="underline hover:text-dental-textPrimary">
+            How our safety checks work
+          </a>
         </p>
       </div>
     </div>

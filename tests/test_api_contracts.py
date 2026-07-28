@@ -105,6 +105,9 @@ def test_protected_endpoints_reject_missing_auth(client):
         ("post", "/api/chat"),
         ("get", "/api/admin/documents"),
         ("get", "/api/admin/feedback"),
+        ("get", "/api/admin/dentist-requests"),
+        ("get", "/api/admin/reviews/sample"),
+        ("get", "/api/admin/reviews/summary"),
     ]:
         kwargs: dict[str, Any] = {"json": {}} if method == "post" else {}
         response = getattr(client, method)(path, **kwargs)
@@ -117,6 +120,9 @@ def test_admin_only_endpoints_reject_non_admin(client):
     for method, path in [
         ("get", "/api/admin/documents"),
         ("get", "/api/admin/feedback"),
+        ("get", "/api/admin/dentist-requests"),
+        ("get", "/api/admin/reviews/sample"),
+        ("get", "/api/admin/reviews/summary"),
     ]:
         response = getattr(client, method)(path, headers=headers)
         assert response.status_code == 403, f"{method.upper()} {path} should reject non-admin, got {response.status_code}"

@@ -68,11 +68,19 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
     role = payload.role
     if role == UserRole.admin:
         raise HTTPException(status_code=403, detail="Admin accounts are created by system configuration only")
-    if role == UserRole.dentist:
-        raise HTTPException(
-            status_code=403,
-            detail="Dentist accounts require credential verification by an admin before clinical access is enabled.",
-        )
+
+    requesting_dentist = role == UserRole.dentist
+    if requesting_dentist:
+        # Phase 8 fix (docs/PRODUCT_BENCHMARK.md finding #1): this used to reject
+        # dentist registration outright with no way for an admin to ever grant one -
+        # the UI promised "admin verification required" but nothing behind it could
+        # verify anyone. The account is created now (usable immediately as a patient
+        # account) with a pending verification request instead of being turned away;
+        # role only becomes UserRole.dentist once an admin approves it via
+        # POST /admin/dentist-requests/{user_id}/approve.
+        if not payload.license_number:
+            raise HTTPException(status_code=422, detail="license_number is required when requesting a dentist account")
+        role = UserRole.patient
 
     user = User(
         email=payload.email.lower(),
@@ -80,13 +88,19 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
         hashed_password=hash_password(payload.password),
         role=role,
     )
+    if requesting_dentist:
+        user.dentist_verification_status = "pending"
+        user.dentist_license_number = payload.license_number
+        user.dentist_clinic_name = payload.clinic_name
+        user.dentist_verification_requested_at = datetime.now(timezone.utc)
     db.add(user)
     db.flush()
 
     access_token = create_access_token(user.id, {"role": user.role.value})
     refresh_token = _create_refresh_token_with_expiry(db, user, request)
 
-    _log_audit(db, user.id, "register", "user", request, f"Role: {role.value}")
+    audit_detail = f"Role: {role.value}" + (" (dentist verification requested)" if requesting_dentist else "")
+    _log_audit(db, user.id, "register", "user", request, audit_detail)
     db.commit()
     db.refresh(user)
     return Token(

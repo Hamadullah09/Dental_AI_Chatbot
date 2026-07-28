@@ -1,4 +1,4 @@
-import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, Dentist, Appointment, Prescription, DentalRecord, UserSettings, HelpArticle, SupportTicket, DocumentIngestionLog, DocumentItem, User, UserRole } from "./types";
+import type { AuthResponse, ChatResponse, ChatSession, DatasetGenerationStatus, Dentist, DentistVerificationRequest, ReviewableConversation, ExpertReview, ExpertReviewSummary, Appointment, Prescription, DentalRecord, UserSettings, HelpArticle, SupportTicket, DocumentIngestionLog, DocumentItem, User, UserRole } from "./types";
 
 type ApiOptions = RequestInit & {
   token?: string | null;
@@ -104,6 +104,8 @@ export function register(input: {
   password: string;
   full_name?: string;
   role: UserRole;
+  license_number?: string;
+  clinic_name?: string;
 }) {
   return request<AuthResponse>("/auth/register", {
     method: "POST",
@@ -231,6 +233,46 @@ export function getDocuments(token: string) {
 
 export function getDocumentIngestionLogs(documentId: string, token: string) {
   return request<DocumentIngestionLog[]>(`/admin/documents/${documentId}/logs`, { token });
+}
+
+export function listDentistRequests(token: string, status: string = "pending") {
+  return request<DentistVerificationRequest[]>(`/admin/dentist-requests?status=${status}`, { token });
+}
+
+export function approveDentistRequest(userId: string, token: string, notes?: string) {
+  return request<DentistVerificationRequest>(`/admin/dentist-requests/${userId}/approve`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ notes: notes || null }),
+  });
+}
+
+export function rejectDentistRequest(userId: string, token: string, notes?: string) {
+  return request<DentistVerificationRequest>(`/admin/dentist-requests/${userId}/reject`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ notes: notes || null }),
+  });
+}
+
+export function sampleReviewableConversations(token: string, limit: number = 10) {
+  return request<ReviewableConversation[]>(`/admin/reviews/sample?limit=${limit}`, { token });
+}
+
+export function submitExpertReview(
+  messageId: string,
+  token: string,
+  rating: { faithfulness: string; safety: string; citation_accuracy: string; notes?: string }
+) {
+  return request<ExpertReview>(`/admin/reviews/${messageId}`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(rating),
+  });
+}
+
+export function getExpertReviewSummary(token: string) {
+  return request<ExpertReviewSummary>("/admin/reviews/summary", { token });
 }
 
 export type UploadDocumentMetadata = {

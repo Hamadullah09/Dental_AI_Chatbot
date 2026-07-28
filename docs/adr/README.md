@@ -29,3 +29,5 @@ production.
 | [0012](0012-scraper-isolated-from-rag-collection.md) | Scraper/dataset-generation pipeline kept isolated from the live RAG Qdrant collection |
 | [0013](0013-mypy-baseline-ratchet.md) | mypy baseline ratchet instead of requiring full strict-mode compliance immediately |
 | [0014](0014-bandit-safety-ci-gates.md) | bandit/safety made real, blocking CI gates via documented, time-boxed suppressions |
+| [0015](0015-safety-scope-disclosure-over-unvalidated-classifier.md) | Explicit safety-scope disclosure instead of building an unvalidated "classifier" |
+| [0016](0016-human-review-workflow-for-unreviewed-conversations.md) | Human expert review workflow for unreviewed conversations, distinct from user feedback |

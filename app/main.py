@@ -12,7 +12,7 @@ from app.core.security import assert_no_default_secrets_in_production
 from app.middleware.metrics import PrometheusMiddleware, metrics_endpoint
 from app.middleware.request import RequestIDMiddleware, SecurityHeadersMiddleware, UserContextMiddleware
 from app.routers import admin, appointments, auth, chat, dashboard, dentists, dental_records, health, prescriptions, settings as settings_router
-from app.services.users import seed_admin_user
+from app.services.users import seed_admin_user, seed_safety_scope_help_article
 
 
 settings = get_settings()
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as db:
         seed_admin_user(db, settings)
+        seed_safety_scope_help_article(db)
     if settings.otel_enabled:
         from app.services.observability import observability
         observability.initialize()

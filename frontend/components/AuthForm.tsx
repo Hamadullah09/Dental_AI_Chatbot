@@ -16,6 +16,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<UserRole>("patient");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [clinicName, setClinicName] = useState("");
   const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -27,7 +29,13 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     try {
       const auth = mode === "login"
         ? await login({ email, password })
-        : await register({ email, password, full_name: fullName, role });
+        : await register({
+            email,
+            password,
+            full_name: fullName,
+            role,
+            ...(role === "dentist" ? { license_number: licenseNumber, clinic_name: clinicName || undefined } : {}),
+          });
       saveAuth(auth);
       router.push(auth.user.role === "admin" ? "/admin" : "/chat");
     } catch (error) {
@@ -156,6 +164,33 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                   Dentist accounts are enabled only after credential verification by an admin.
                 </p>
               </div>
+            )}
+
+            {/* License/clinic details - only collected for a dentist verification request */}
+            {mode === "register" && role === "dentist" && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">License Number</label>
+                  <input
+                    className="w-full rounded-2xl border border-dental-border bg-dental-input px-4 py-3.5 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                    type="text"
+                    placeholder="e.g., PMDC-12345"
+                    value={licenseNumber}
+                    onChange={(event) => setLicenseNumber(event.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-dental-textSecondary">Clinic / Hospital (optional)</label>
+                  <input
+                    className="w-full rounded-2xl border border-dental-border bg-dental-input px-4 py-3.5 text-sm text-dental-textPrimary outline-none transition-all placeholder:text-dental-textMuted focus:border-dental-accent focus:ring-2 focus:ring-dental-accent/20"
+                    type="text"
+                    placeholder="e.g., Smile Dental Clinic"
+                    value={clinicName}
+                    onChange={(event) => setClinicName(event.target.value)}
+                  />
+                </div>
+              </>
             )}
           </div>
 

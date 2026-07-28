@@ -2606,6 +2606,97 @@
         "title": "DentistUpdate",
         "type": "object"
       },
+      "DentistVerificationDecision": {
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "title": "DentistVerificationDecision",
+        "type": "object"
+      },
+      "DentistVerificationRequestRead": {
+        "properties": {
+          "clinic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clinic Name"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "license_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Number"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "full_name",
+          "license_number",
+          "clinic_name",
+          "requested_at",
+          "status"
+        ],
+        "title": "DentistVerificationRequestRead",
+        "type": "object"
+      },
       "DocumentIngestionLogRead": {
         "properties": {
           "created_at": {
@@ -2899,6 +2990,188 @@
           }
         },
         "title": "EvaluationMetricsResponse",
+        "type": "object"
+      },
+      "ExpertReviewCreate": {
+        "properties": {
+          "citation_accuracy": {
+            "title": "Citation Accuracy",
+            "type": "string"
+          },
+          "faithfulness": {
+            "title": "Faithfulness",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "safety": {
+            "title": "Safety",
+            "type": "string"
+          }
+        },
+        "required": [
+          "faithfulness",
+          "safety",
+          "citation_accuracy"
+        ],
+        "title": "ExpertReviewCreate",
+        "type": "object"
+      },
+      "ExpertReviewRead": {
+        "properties": {
+          "citation_accuracy": {
+            "title": "Citation Accuracy",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "faithfulness": {
+            "title": "Faithfulness",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "safety": {
+            "title": "Safety",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "reviewer_id",
+          "faithfulness",
+          "safety",
+          "citation_accuracy",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ExpertReviewRead",
+        "type": "object"
+      },
+      "ExpertReviewSummary": {
+        "properties": {
+          "by_citation_accuracy": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Citation Accuracy",
+            "type": "object"
+          },
+          "by_faithfulness": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Faithfulness",
+            "type": "object"
+          },
+          "by_safety": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Safety",
+            "type": "object"
+          },
+          "citation_accurate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Accurate Pct"
+          },
+          "faithful_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faithful Pct"
+          },
+          "safe_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Pct"
+          },
+          "total_reviewed": {
+            "title": "Total Reviewed",
+            "type": "integer"
+          },
+          "total_unreviewed": {
+            "title": "Total Unreviewed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_reviewed",
+          "total_unreviewed",
+          "faithful_pct",
+          "safe_pct",
+          "citation_accurate_pct",
+          "by_faithfulness",
+          "by_safety",
+          "by_citation_accuracy"
+        ],
+        "title": "ExpertReviewSummary",
         "type": "object"
       },
       "ExportResponse": {
@@ -3827,6 +4100,68 @@
         "title": "ReviewStatus",
         "type": "string"
       },
+      "ReviewableConversationRead": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "answer_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Mode"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message_id",
+          "session_id",
+          "question",
+          "answer",
+          "sources",
+          "answer_mode",
+          "created_at"
+        ],
+        "title": "ReviewableConversationRead",
+        "type": "object"
+      },
       "SourceCitation": {
         "properties": {
           "chunk_index": {
@@ -4044,6 +4379,18 @@
       },
       "UserCreate": {
         "properties": {
+          "clinic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only used when role=dentist.",
+            "title": "Clinic Name"
+          },
           "email": {
             "format": "email",
             "title": "Email",
@@ -4059,6 +4406,18 @@
               }
             ],
             "title": "Full Name"
+          },
+          "license_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required when role=dentist: submitted for admin verification, not validated automatically.",
+            "title": "License Number"
           },
           "password": {
             "minLength": 8,
@@ -4164,6 +4523,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "dentist_verification_status": {
+            "default": "none",
+            "title": "Dentist Verification Status",
+            "type": "string"
+          },
           "email": {
             "format": "email",
             "title": "Email",
@@ -4215,6 +4579,11 @@
             "title": "Ai Citations",
             "type": "boolean"
           },
+          "ai_disclaimer_acknowledged": {
+            "default": false,
+            "title": "Ai Disclaimer Acknowledged",
+            "type": "boolean"
+          },
           "ai_response_style": {
             "default": "balanced",
             "title": "Ai Response Style",
@@ -4240,6 +4609,11 @@
             "title": "Browser Notifications",
             "type": "boolean"
           },
+          "chat_history_retention_days": {
+            "default": 90,
+            "title": "Chat History Retention Days",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -4250,15 +4624,30 @@
             "title": "Data Sharing",
             "type": "boolean"
           },
+          "data_sharing_consent": {
+            "default": false,
+            "title": "Data Sharing Consent",
+            "type": "boolean"
+          },
           "email_notifications": {
             "default": true,
             "title": "Email Notifications",
+            "type": "boolean"
+          },
+          "hipaa_consent": {
+            "default": false,
+            "title": "Hipaa Consent",
             "type": "boolean"
           },
           "language": {
             "default": "en",
             "title": "Language",
             "type": "string"
+          },
+          "push_notifications": {
+            "default": true,
+            "title": "Push Notifications",
+            "type": "boolean"
           },
           "sms_notifications": {
             "default": false,
@@ -4310,6 +4699,17 @@
               }
             ],
             "title": "Ai Citations"
+          },
+          "ai_disclaimer_acknowledged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Disclaimer Acknowledged"
           },
           "ai_response_style": {
             "anyOf": [
@@ -4366,6 +4766,17 @@
             ],
             "title": "Browser Notifications"
           },
+          "chat_history_retention_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat History Retention Days"
+          },
           "data_sharing": {
             "anyOf": [
               {
@@ -4376,6 +4787,17 @@
               }
             ],
             "title": "Data Sharing"
+          },
+          "data_sharing_consent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Sharing Consent"
           },
           "email_notifications": {
             "anyOf": [
@@ -4388,6 +4810,17 @@
             ],
             "title": "Email Notifications"
           },
+          "hipaa_consent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hipaa Consent"
+          },
           "language": {
             "anyOf": [
               {
@@ -4398,6 +4831,17 @@
               }
             ],
             "title": "Language"
+          },
+          "push_notifications": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Notifications"
           },
           "sms_notifications": {
             "anyOf": [
@@ -4702,6 +5146,175 @@
           }
         ],
         "summary": "Dataset Generation Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/dentist-requests": {
+      "get": {
+        "description": "Phase 8 (docs/PRODUCT_BENCHMARK.md finding #1): the registration UI has always\npromised \"admin verification required\" for a dentist account - this is the first\nplace an admin can actually see who's asked for one. Oldest request first, so a\nrequest doesn't sit unreviewed just because newer ones keep arriving above it.",
+        "operationId": "list_dentist_verification_requests_api_admin_dentist_requests_get",
+        "parameters": [
+          {
+            "description": "pending, approved, rejected, or all",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "description": "pending, approved, rejected, or all",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DentistVerificationRequestRead"
+                  },
+                  "title": "Response List Dentist Verification Requests Api Admin Dentist Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Dentist Verification Requests",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/dentist-requests/{user_id}/approve": {
+      "post": {
+        "operationId": "approve_dentist_verification_api_admin_dentist_requests__user_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DentistVerificationDecision",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DentistVerificationRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve Dentist Verification",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/dentist-requests/{user_id}/reject": {
+      "post": {
+        "operationId": "reject_dentist_verification_api_admin_dentist_requests__user_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DentistVerificationDecision",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DentistVerificationRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Dentist Verification",
         "tags": [
           "admin"
         ]
@@ -5263,6 +5876,145 @@
         "summary": "Update Ticket",
         "tags": [
           "admin-help"
+        ]
+      }
+    },
+    "/api/admin/reviews/sample": {
+      "get": {
+        "description": "Phase 8: a human expert review workflow for unreviewed conversations, distinct\nfrom the user-submitted Feedback queue above (docs/adr/0016-...). Oldest-unreviewed-\nfirst, same rationale as the dentist-request queue - systematic coverage over time\nrather than only ever reviewing whatever's most recent. Excludes messages that\nalready have an ExpertReview row so a cleared queue doesn't keep resurfacing.",
+        "operationId": "sample_conversations_for_expert_review_api_admin_reviews_sample_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewableConversationRead"
+                  },
+                  "title": "Response Sample Conversations For Expert Review Api Admin Reviews Sample Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sample Conversations For Expert Review",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/reviews/summary": {
+      "get": {
+        "description": "Tracks the same faithfulness/safety/citation-accuracy rubric over time, meant to\nsit alongside the automated metrics on /admin/dashboard - those measure what the\nsystem reports about itself; this measures what a human reviewer independently found.",
+        "operationId": "expert_review_summary_api_admin_reviews_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertReviewSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Expert Review Summary",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/reviews/{message_id}": {
+      "post": {
+        "operationId": "submit_expert_review_api_admin_reviews__message_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpertReviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertReviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Expert Review",
+        "tags": [
+          "admin"
         ]
       }
     },

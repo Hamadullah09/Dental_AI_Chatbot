@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from arq.cron import cron as _cron
+
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import Document, DocumentStatus
@@ -74,6 +76,44 @@ async def cleanup_old_audit_logs(ctx: dict[str, Any]) -> dict[str, str]:
         db.commit()
         logger.info(f"Cleaned up {deleted} old audit logs")
         return {"deleted": deleted}
+
+
+async def enforce_chat_retention_task(ctx: dict[str, Any]) -> dict[str, int]:
+    """Phase 8: makes UserSettings.chat_history_retention_days (frontend/app/settings/
+    page.tsx's "Chat History Retention" control) actually do something - previously the
+    setting could be saved (or, before this same pass, wasn't even persisted at all) but
+    nothing ever deleted anything, so a user who chose "30 days" trusting their history
+    was being purged on that schedule was being told something false. See
+    docs/PRODUCT_BENCHMARK.md finding #4.
+
+    Deletes each user's ChatSession rows (Message rows cascade via the ORM relationship's
+    `cascade="all, delete-orphan"`) whose `updated_at` is older than that user's chosen
+    window. Users who have never opened /settings have no UserSettings row yet (it's
+    created lazily on first GET/PATCH) - they get the same 90-day default the column
+    itself defaults to, so "never visited settings" doesn't silently mean "keep forever."
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.models import ChatSession, User, UserSettings
+
+    deleted_sessions = 0
+    with SessionLocal() as db:
+        user_ids = [row[0] for row in db.query(User.id).all()]
+        for user_id in user_ids:
+            settings_row = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+            retention_days = settings_row.chat_history_retention_days if settings_row else 90
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+            stale_sessions = (
+                db.query(ChatSession)
+                .filter(ChatSession.user_id == user_id, ChatSession.updated_at < cutoff)
+                .all()
+            )
+            for session in stale_sessions:
+                db.delete(session)
+                deleted_sessions += 1
+        db.commit()
+
+    logger.info(f"Chat retention enforcement: deleted {deleted_sessions} session(s) past their retention window")
+    return {"deleted_sessions": deleted_sessions}
 
 
 async def generate_dataset_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, str]:
@@ -163,9 +203,20 @@ class WorkerSettings:
         ingest_document_task,
         cleanup_expired_tokens,
         cleanup_old_audit_logs,
+        enforce_chat_retention_task,
         generate_dataset_task,
         sync_dentists_task,
         reindex_dentists_task,
+    ]
+    # Phase 8: cleanup_expired_tokens/cleanup_old_audit_logs existed as real,
+    # callable functions long before this pass but were never actually scheduled to run
+    # periodically - only reachable if something manually enqueued them, which nothing
+    # did. enforce_chat_retention_task needs a real schedule to do what its name says,
+    # so it's added here with one; the other two cleanup jobs have the exact same
+    # "defined but never scheduled" gap and would benefit from the same treatment as a
+    # follow-up, out of scope for this specific fix.
+    cron_jobs = [
+        _cron(enforce_chat_retention_task, hour=3, minute=0),
     ]
     queues = ["default"]
     max_jobs = 4

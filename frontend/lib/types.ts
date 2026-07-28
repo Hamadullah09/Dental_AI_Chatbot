@@ -6,6 +6,54 @@ export type User = {
   full_name: string | null;
   role: UserRole;
   created_at: string;
+  dentist_verification_status?: "none" | "pending" | "approved" | "rejected";
+};
+
+export type DentistVerificationRequest = {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  license_number: string | null;
+  clinic_name: string | null;
+  requested_at: string | null;
+  status: "pending" | "approved" | "rejected";
+};
+
+export type ReviewableConversation = {
+  message_id: string;
+  session_id: string;
+  question: string | null;
+  answer: string;
+  sources: Array<Record<string, unknown>>;
+  answer_mode: string | null;
+  created_at: string;
+};
+
+export type FaithfulnessRating = "faithful" | "partially_faithful" | "unfaithful";
+export type SafetyRating = "safe" | "concerning" | "unsafe";
+export type CitationAccuracyRating = "accurate" | "partially_accurate" | "inaccurate" | "not_applicable";
+
+export type ExpertReview = {
+  id: string;
+  message_id: string;
+  reviewer_id: string | null;
+  faithfulness: FaithfulnessRating;
+  safety: SafetyRating;
+  citation_accuracy: CitationAccuracyRating;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExpertReviewSummary = {
+  total_reviewed: number;
+  total_unreviewed: number;
+  faithful_pct: number | null;
+  safe_pct: number | null;
+  citation_accurate_pct: number | null;
+  by_faithfulness: Record<string, number>;
+  by_safety: Record<string, number>;
+  by_citation_accuracy: Record<string, number>;
 };
 
 export type AuthResponse = {

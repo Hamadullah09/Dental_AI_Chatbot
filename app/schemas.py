@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models import (
     AppointmentStatus,
@@ -19,6 +19,8 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
     full_name: str | None = None
     role: UserRole = Field(default=UserRole.patient, description="Public registration supports patient, student, and dentist roles.")
+    license_number: str | None = Field(default=None, description="Required when role=dentist: submitted for admin verification, not validated automatically.")
+    clinic_name: str | None = Field(default=None, description="Only used when role=dentist.")
 
 
 class UserRead(BaseModel):
@@ -27,8 +29,25 @@ class UserRead(BaseModel):
     full_name: str | None
     role: UserRole
     created_at: datetime
+    dentist_verification_status: str = "none"
 
     model_config = {"from_attributes": True}
+
+
+class DentistVerificationRequestRead(BaseModel):
+    user_id: str
+    email: EmailStr
+    full_name: str | None
+    license_number: str | None
+    clinic_name: str | None
+    requested_at: datetime | None
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class DentistVerificationDecision(BaseModel):
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class Token(BaseModel):
@@ -214,6 +233,77 @@ class FeedbackReviewResult(BaseModel):
     limit: int
     total_pages: int
     average_rating: float | None
+
+
+# Phase 8: a domain expert deliberately sampling real conversations against a fixed
+# rubric, distinct from the user-submitted Feedback above - see app/models.py's
+# ExpertReview docstring and docs/adr/0016-human-review-workflow-for-unreviewed-conversations.md.
+FAITHFULNESS_RATINGS = {"faithful", "partially_faithful", "unfaithful"}
+SAFETY_RATINGS = {"safe", "concerning", "unsafe"}
+CITATION_ACCURACY_RATINGS = {"accurate", "partially_accurate", "inaccurate", "not_applicable"}
+
+
+class ReviewableConversationRead(BaseModel):
+    message_id: str
+    session_id: str
+    question: str | None
+    answer: str
+    sources: list[dict[str, Any]]
+    answer_mode: str | None
+    created_at: datetime
+
+
+class ExpertReviewCreate(BaseModel):
+    faithfulness: str
+    safety: str
+    citation_accuracy: str
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("faithfulness")
+    @classmethod
+    def _check_faithfulness(cls, value: str) -> str:
+        if value not in FAITHFULNESS_RATINGS:
+            raise ValueError(f"faithfulness must be one of {sorted(FAITHFULNESS_RATINGS)}")
+        return value
+
+    @field_validator("safety")
+    @classmethod
+    def _check_safety(cls, value: str) -> str:
+        if value not in SAFETY_RATINGS:
+            raise ValueError(f"safety must be one of {sorted(SAFETY_RATINGS)}")
+        return value
+
+    @field_validator("citation_accuracy")
+    @classmethod
+    def _check_citation_accuracy(cls, value: str) -> str:
+        if value not in CITATION_ACCURACY_RATINGS:
+            raise ValueError(f"citation_accuracy must be one of {sorted(CITATION_ACCURACY_RATINGS)}")
+        return value
+
+
+class ExpertReviewRead(BaseModel):
+    id: str
+    message_id: str
+    reviewer_id: str | None
+    faithfulness: str
+    safety: str
+    citation_accuracy: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExpertReviewSummary(BaseModel):
+    total_reviewed: int
+    total_unreviewed: int
+    faithful_pct: float | None
+    safe_pct: float | None
+    citation_accurate_pct: float | None
+    by_faithfulness: dict[str, int]
+    by_safety: dict[str, int]
+    by_citation_accuracy: dict[str, int]
 
 
 class TimeSlot(BaseModel):
@@ -591,6 +681,19 @@ class DentalRecordRead(BaseModel):
         )
 
 
+# The settings page (frontend/app/settings/page.tsx) only ever offers these four
+# choices via a fixed <select> - constraining the API to the same set means the
+# retention-enforcement job (app/workers/tasks.py: enforce_chat_retention_task) never
+# has to handle an arbitrary/accidental value like 0 or a negative number.
+ALLOWED_CHAT_RETENTION_DAYS = {30, 90, 180, 365}
+
+
+def _validate_retention_days(value: int | None) -> int | None:
+    if value is not None and value not in ALLOWED_CHAT_RETENTION_DAYS:
+        raise ValueError(f"chat_history_retention_days must be one of {sorted(ALLOWED_CHAT_RETENTION_DAYS)}")
+    return value
+
+
 class UserSettingsBase(BaseModel):
     theme: str = "system"
     language: str = "en"
@@ -598,13 +701,23 @@ class UserSettingsBase(BaseModel):
     email_notifications: bool = True
     sms_notifications: bool = False
     browser_notifications: bool = True
+    push_notifications: bool = True
     appointment_reminders: bool = True
     data_sharing: bool = False
+    data_sharing_consent: bool = False
+    hipaa_consent: bool = False
+    ai_disclaimer_acknowledged: bool = False
+    chat_history_retention_days: int = 90
     two_factor_enabled: bool = False
     ai_streaming: bool = True
     ai_citations: bool = True
     ai_visual_retrieval: bool = True
     ai_response_style: str = "balanced"
+
+    @field_validator("chat_history_retention_days")
+    @classmethod
+    def _check_retention_days(cls, value: int) -> int:
+        return _validate_retention_days(value)  # type: ignore[return-value]
 
 
 class UserSettingsUpdate(BaseModel):
@@ -614,13 +727,23 @@ class UserSettingsUpdate(BaseModel):
     email_notifications: bool | None = None
     sms_notifications: bool | None = None
     browser_notifications: bool | None = None
+    push_notifications: bool | None = None
     appointment_reminders: bool | None = None
     data_sharing: bool | None = None
+    data_sharing_consent: bool | None = None
+    hipaa_consent: bool | None = None
+    ai_disclaimer_acknowledged: bool | None = None
+    chat_history_retention_days: int | None = None
     two_factor_enabled: bool | None = None
     ai_streaming: bool | None = None
     ai_citations: bool | None = None
     ai_visual_retrieval: bool | None = None
     ai_response_style: str | None = None
+
+    @field_validator("chat_history_retention_days")
+    @classmethod
+    def _check_retention_days_update(cls, value: int | None) -> int | None:
+        return _validate_retention_days(value)
 
 
 class UserSettingsRead(UserSettingsBase):
@@ -638,6 +761,20 @@ class HelpArticleBase(BaseModel):
     tags: list[str] = []
     is_published: bool = True
     order: int = 0
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _split_stored_tags(cls, value: Any) -> list[str]:
+        # HelpCenterArticle.tags is stored as a single comma-joined column
+        # (app/routers/settings.py's create/update handlers do ",".join(tags) on the way
+        # in), but this schema declares tags as list[str] for the create/update request
+        # bodies - reading a real row straight back with model_validate(article,
+        # from_attributes=True) handed Pydantic the raw comma-string, which a bare
+        # list[str] field rejects outright (a str is never treated as a valid list[str]
+        # input in Pydantic v2). Any help article with tags would 500 on every GET.
+        if isinstance(value, str):
+            return [tag for tag in value.split(",") if tag]
+        return value or []
 
 
 class HelpArticleCreate(HelpArticleBase):

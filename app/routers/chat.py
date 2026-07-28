@@ -92,11 +92,18 @@ def start_ingestion(background_tasks: BackgroundTasks, document_id: str) -> None
         background_tasks.add_task(ingest_user_document_background, document_id)
 
 
-def _sources_to_json(sources: list, visuals: list | None = None) -> str:
+def _sources_to_json(sources: list, visuals: list | None = None, answer_mode: str | None = None) -> str:
     return json.dumps(
         {
             "sources": [s.model_dump() if hasattr(s, "model_dump") else s for s in sources],
             "visuals": [v.model_dump() if hasattr(v, "model_dump") else v for v in (visuals or [])],
+            # Phase 8: carried through so the expert review workflow
+            # (GET /admin/reviews/sample) can show a reviewer what mode produced this
+            # answer (rag_grounded / general_fallback / service_unavailable / ...)
+            # without needing to re-run the pipeline. Optional and additive - existing
+            # rows without it just have no "answer_mode" key, which every reader here
+            # already handles with .get().
+            "answer_mode": answer_mode,
         }
     )
 
@@ -310,7 +317,7 @@ def chat(
         session_id=session.id,
         role=MessageRole.assistant,
         content=answer,
-        sources_json=_sources_to_json(sources, visuals),
+        sources_json=_sources_to_json(sources, visuals, answer_mode),
     )
     db.add(assistant_message)
     db.commit()
@@ -450,7 +457,7 @@ async def chat_stream(
                     session_id=session.id,
                     role=MessageRole.assistant,
                     content=full_answer,
-                    sources_json=json.dumps({"sources": final_sources, "visuals": final_visuals}),
+                    sources_json=json.dumps({"sources": final_sources, "visuals": final_visuals, "answer_mode": final_mode}),
                 ))
                 save_db.commit()
 

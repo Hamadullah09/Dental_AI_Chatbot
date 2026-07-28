@@ -111,7 +111,7 @@ def generate_direct_answer(state: AgentState) -> AgentState:
         state.answer = "Goodbye! Take care of your dental health!"
     else:
         try:
-            from app.services.rag import RAGService
+            from app.services.rag import RAGService, is_service_unavailable_answer, service_unavailable_answer
             rag = RAGService()
             chunks = rag.retrieve(state.question, top_k=3, filters=state.filters)
             if chunks:
@@ -140,11 +140,31 @@ def generate_direct_answer(state: AgentState) -> AgentState:
                     })
             else:
                 fallback = rag.generate_general_fallback_answer(state.question, user_role=state.user_role)
-                state.answer = fallback or settings.medical_disclaimer
-                state.answer_mode = "general_fallback" if fallback else "insufficient_evidence"
+                if fallback and is_service_unavailable_answer(fallback):
+                    # generate_general_fallback_answer() already produces this exact text
+                    # when the LLM itself is unreachable (LLMGenerationError, caught inside
+                    # it) - tag it accurately instead of as a normal "general_fallback"
+                    # success, so /api/chat (chat.py) turns it into a 503 the same way the
+                    # streaming path already does, instead of a misleading 200.
+                    state.answer = fallback
+                    state.answer_mode = "service_unavailable"
+                else:
+                    state.answer = fallback or settings.medical_disclaimer
+                    state.answer_mode = "general_fallback" if fallback else "insufficient_evidence"
                 state.sources = []
         except Exception:
-            state.answer = settings.medical_disclaimer
+            # Previously: `state.answer = settings.medical_disclaimer` with no change to
+            # answer_mode, which left it at AgentState's default "rag_grounded" - a real
+            # LLM/retrieval failure (e.g. Ollama's circuit breaker open) was returned to
+            # the user as HTTP 200 with an empty, disclaimer-only "answer" mislabeled as a
+            # successful grounded response (see docs/PRODUCT_BENCHMARK.md finding #2). Use
+            # the same honest, already-established message and mode the streaming path
+            # (app/core/streaming.py) shows for the identical failure, so both surfaces
+            # agree and chat.py's `answer_mode == "service_unavailable"` check (below)
+            # correctly turns this into a 503 instead of a fake success.
+            state.answer = service_unavailable_answer(state.question)
+            state.answer_mode = "service_unavailable"
+            state.sources = []
 
     state.answer_mode = state.answer_mode or "conversational"
     state.sources = state.sources or []

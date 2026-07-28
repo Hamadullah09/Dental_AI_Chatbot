@@ -51,6 +51,18 @@ covering Phases 0-6 in `docs/GAP_AUDIT_PHASE0.md`) vs. genuinely still open.
 - Architecture decisions from Phases 1-6 are now recorded in `docs/adr/` and an
   operational runbook exists (`docs/RUNBOOK.md`) covering Ollama-down, Qdrant-degraded,
   latency-spike, and citation-pass-rate-drop scenarios (Phase 7).
+- **Phase 8** (fixes to the live-tested findings in `docs/PRODUCT_BENCHMARK.md`):
+  `/api/chat`'s non-streaming path no longer returns a hollow, mislabeled-success answer
+  when generation fails (`generate_direct_answer()`'s bare except had never reset
+  `answer_mode` from its stale default); Chat History Retention is now persisted and
+  actually enforced by a daily `arq` cron job, alongside several other settings fields
+  the frontend sent but the backend previously silently dropped; a real admin workflow
+  (`/admin/dentist-requests/...`) lets someone actually become a verified dentist, which
+  nothing before this could do; a domain-expert review workflow
+  (`/admin/reviews/...`, distinct from user feedback) now exists for sampling real
+  conversations against a faithfulness/safety/citation rubric over time - this directly
+  answers the "human review labels" and part of the "self-check... not verified" items
+  previously listed below.
 
 ## Still genuinely open
 
@@ -59,16 +71,15 @@ covering Phases 0-6 in `docs/GAP_AUDIT_PHASE0.md`) vs. genuinely still open.
   it's off in any real deployment; nothing in the code enforces that for you.
 - **RAG evaluation dataset**: `docs/evaluation_dataset.jsonl` has 30 cases (Phase 5) - more
   expert-reviewed questions would make `scripts/ci_retrieval_gate.py` a stronger signal.
-- **Human review labels for faithfulness/safety/citation correctness**: the feedback
-  review queue (Phase 5) surfaces user ratings, but there's no structured workflow for a
-  domain expert to label a sample of *unreviewed* conversations against a rubric (this is
-  different from user-submitted feedback) - Phase 3's task description asked for an
-  "evaluation/quality dashboard" tracking this over time, which was not built here; the
-  citation/retrieval CI gate is the closest thing that exists.
-- **Self-check / safety detection is still heuristic, not verified**: `ENABLE_SELF_CHECK`
-  and `app/agent/nodes/safety.py` are pattern-based (grounding-in-context word overlap,
-  prescribing-language regex, emergency-keyword regex). No LLM- or embedding-based
-  verifier exists yet, and results aren't persisted for evaluation over time.
+- **Self-check / safety detection is still heuristic, not clinically verified**:
+  `ENABLE_SELF_CHECK` and `app/agent/nodes/safety.py` are pattern-based
+  (grounding-in-context word overlap, prescribing-language regex, emergency-keyword
+  regex). Phase 8 deliberately chose not to build an unvalidated "classifier" and
+  instead made this limitation an explicit, user-reachable disclosure
+  (`docs/adr/0015-safety-scope-disclosure-over-unvalidated-classifier.md`) plus a real
+  human expert review workflow (`docs/adr/0016-human-review-workflow-for-unreviewed-conversations.md`)
+  to track quality over time - but no LLM- or embedding-based verifier exists yet, and a
+  genuinely clinically validated classifier remains real future work.
 - **Frontend**: still the original Next.js app: no rework was in scope for this pass.
 - **Environment-specific deployment guides**: `k8s/README.md` (Phase 4) and
   `docs/DEPLOYMENT.md` exist for Docker Compose / Kubernetes, but there's no guide for

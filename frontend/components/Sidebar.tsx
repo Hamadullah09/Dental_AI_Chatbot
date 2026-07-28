@@ -716,6 +716,28 @@ export function Sidebar({
                         <Settings className="h-5 w-5 shrink-0" />
                         <span>Admin workspace</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          router.push("/admin/dentist-requests");
+                          onClose();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-dental-textPrimary transition-colors hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60 dark:text-white dark:hover:bg-white/10"
+                      >
+                        <Stethoscope className="h-5 w-5 shrink-0 text-dental-textSecondary dark:text-white/85" />
+                        <span>Dentist Requests</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          router.push("/admin/expert-reviews");
+                          onClose();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] text-dental-textPrimary transition-colors hover:bg-dental-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dental-accent/60 dark:text-white dark:hover:bg-white/10"
+                      >
+                        <ClipboardList className="h-5 w-5 shrink-0 text-dental-textSecondary dark:text-white/85" />
+                        <span>Expert Reviews</span>
+                      </button>
                     </>
                   )}
 
