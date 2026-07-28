@@ -17,6 +17,7 @@ def verify_citations(state: AgentState) -> AgentState:
 
     if not state.answer or not state.retrieved_chunks:
         state.add_trace("citation_verifier", "skipped", "No answer or no chunks")
+        _record_result("skipped")
         return state
 
     sentences = _split_into_sentences(state.answer)
@@ -39,14 +40,25 @@ def verify_citations(state: AgentState) -> AgentState:
     if removed_count > 0 and len(verified_sentences) > 3:
         state.answer = " ".join(verified_sentences)
         state.add_trace("citation_verifier", "completed", f"Removed {removed_count} unsupported sentences")
+        _record_result("trimmed")
     elif removed_count > 0 and len(verified_sentences) <= 3:
         state.add_trace("citation_verifier", "completed", f"Kept all sentences ({removed_count} flagged but too few remaining)")
+        _record_result("flagged_but_kept")
     else:
         state.add_trace("citation_verifier", "completed", "All sentences verified")
+        _record_result("passed")
 
     duration_ms = (time.perf_counter() - start) * 1000
     logger.info(f"Citation verification: {removed_count} removed in {duration_ms:.1f}ms")
     return state
+
+
+def _record_result(result: str) -> None:
+    try:
+        from app.middleware.metrics import CITATION_VERIFICATION_TOTAL
+        CITATION_VERIFICATION_TOTAL.labels(result=result).inc()
+    except Exception:
+        pass
 
 
 def _split_into_sentences(text: str) -> list[str]:

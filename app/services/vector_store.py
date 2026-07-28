@@ -42,7 +42,10 @@ class ResilientQdrantClient:
                     name=f"qdrant.{name}",
                 )
 
-            return qdrant_breaker.call(_with_retry)
+            from app.services.observability import observability
+
+            with observability.trace_operation(f"qdrant.{name}", {"db.system": "qdrant"}):
+                return qdrant_breaker.call(_with_retry)
 
         return wrapped
 

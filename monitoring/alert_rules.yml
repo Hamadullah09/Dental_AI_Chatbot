@@ -1,0 +1,69 @@
+groups:
+  - name: dental-ai-slo
+    rules:
+      - alert: HighAPILatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 API latency above 5s on {{ $labels.endpoint }}"
+          description: "p95 request latency has exceeded 5s for 5 minutes on {{ $labels.endpoint }}. Check Ollama/Qdrant health and the GPU queue depth panel."
+
+      - alert: HighHTTPErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP 5xx error rate above 5%"
+          description: "More than 5% of requests are failing with a 5xx status over the last 5 minutes."
+
+      - alert: OllamaQueueDepthHigh
+        expr: concurrency_gate_queue_depth{name="ollama"} > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ollama request queue depth is high"
+          description: "{{ $value }} requests are waiting for a GPU inference slot. Consider raising OLLAMA_MAX_CONCURRENT_REQUESTS, adding a GPU replica, or checking for a stuck/slow generation."
+
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state > 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker open: {{ $labels.name }}"
+          description: "The {{ $labels.name }} circuit breaker has been open for 1 minute - that dependency is being treated as down and requests are failing fast."
+
+      - alert: AgentGraphFallbackRateHigh
+        expr: |
+          sum(rate(agent_graph_fallback_total[15m])) / sum(rate(chat_queries_total[15m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LangGraph agent fallback rate above 2%"
+          description: "More than 2% of chat turns are silently falling back to the legacy RAGService path (see docs/GAP_AUDIT_PHASE0.md finding #1). Check logs for agent_graph.failed_silently_would_have_fallen_back to find the reason."
+
+      - alert: CitationVerificationTrimRateHigh
+        expr: |
+          sum(rate(citation_verification_total{result="trimmed"}[30m])) / sum(rate(citation_verification_total[30m])) > 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Citation verifier is trimming >15% of answers"
+          description: "A rising trim rate can mean retrieval quality has degraded (irrelevant chunks reaching generation) or a prompt regression is causing ungrounded claims."
+
+      - alert: RetrievalDegradedNotFullHybrid
+        expr: |
+          sum(rate(retrieval_degradation_total[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retrieval is running in a degraded tier"
+          description: "retrieval_degradation_total is incrementing - retrieval has stepped down from full_hybrid (see app/services/degradation.py tiers). Check the qdrant circuit breaker state."

@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as db:
         seed_admin_user(db, settings)
+    if settings.otel_enabled:
+        from app.services.observability import observability
+        observability.initialize()
     logger.info("Application started", extra={"extra_data": {"environment": settings.environment}})
     yield
     close_redis()

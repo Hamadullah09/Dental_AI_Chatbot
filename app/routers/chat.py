@@ -24,6 +24,7 @@ from app.middleware.metrics import (
     PERSONA_RESPONSE_TOTAL,
     RETRIEVAL_DEGRADATION_TOTAL,
     RETRIEVAL_LATENCY,
+    TOKEN_USAGE_TOTAL,
     UPLOAD_IDEMPOTENT_REPLAY_TOTAL,
 )
 import time
@@ -35,6 +36,17 @@ def _idempotency_cache() -> RedisCache:
 
 def _idempotency_scope(user_id: str, key: str) -> str:
     return f"{user_id}:{key}"
+
+
+def _record_token_usage(user_role: str, question: str, answer: str) -> None:
+    """Approximate token usage (chars/4) per turn, by role and direction - a real tokenizer
+    count would be more accurate, but this is enough to track trend/relative cost per
+    persona without adding a tokenizer dependency to the request path (Phase 3)."""
+    try:
+        TOKEN_USAGE_TOTAL.labels(user_role=user_role, direction="prompt").inc(max(1, len(question) // 4))
+        TOKEN_USAGE_TOTAL.labels(user_role=user_role, direction="completion").inc(max(1, len(answer) // 4))
+    except Exception:
+        pass
 
 
 def sanitize_user_text(text: str) -> str:
@@ -292,6 +304,7 @@ def chat(
     total_duration = (time.perf_counter() - start) * 1000
     CHAT_QUERIES.labels(answer_mode=answer_mode).inc()
     PERSONA_RESPONSE_TOTAL.labels(user_role=current_user.role.value, pipeline="graph").inc()
+    _record_token_usage(current_user.role.value, question, answer)
     logger.info(
         f"Chat completed: {total_duration:.0f}ms, mode={answer_mode}, sources={len(sources)}",
         extra={"extra_data": {"user_id": current_user.id, "duration_ms": total_duration, "answer_mode": answer_mode}},
@@ -414,6 +427,7 @@ async def chat_stream(
 
         CHAT_QUERIES.labels(answer_mode=final_mode).inc()
         PERSONA_RESPONSE_TOTAL.labels(user_role=current_user.role.value, pipeline="streaming").inc()
+        _record_token_usage(current_user.role.value, question, full_answer)
 
         if full_answer:
             with SessionLocal() as save_db:

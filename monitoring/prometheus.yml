@@ -2,6 +2,14 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - 'alert_rules.yml'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 scrape_configs:
   - job_name: 'dental-ai-backend'
     static_configs:
@@ -19,12 +27,16 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 30s
 
+  # redis:6379 and postgres:5432 speak their own wire protocols, not Prometheus's text
+  # format - scraping them directly (the previous config) silently produced nothing.
+  # These sidecar exporters translate; see the redis_exporter/postgres_exporter services
+  # in docker-compose.yml (Phase 3).
   - job_name: 'redis'
     static_configs:
-      - targets: ['redis:6379']
+      - targets: ['redis_exporter:9121']
     scrape_interval: 30s
 
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres:5432']
+      - targets: ['postgres_exporter:9187']
     scrape_interval: 30s

@@ -75,11 +75,14 @@ class LLMService:
         return False
 
     def generate(self, prompt: str, *, system_prompt: str, temperature: float = 0.2, top_p: float | None = None) -> str:
-        if self.provider == "ollama":
-            return self._generate_ollama(prompt, system_prompt=system_prompt, temperature=temperature, top_p=top_p)
-        if self.provider == "openai":
-            return self._generate_openai(prompt, system_prompt=system_prompt, temperature=temperature)
-        raise LLMGenerationError("LLM_PROVIDER must be 'openai' or 'ollama'.")
+        from app.services.observability import observability
+
+        with observability.trace_operation(f"llm.generate.{self.provider}", {"llm.provider": self.provider}):
+            if self.provider == "ollama":
+                return self._generate_ollama(prompt, system_prompt=system_prompt, temperature=temperature, top_p=top_p)
+            if self.provider == "openai":
+                return self._generate_openai(prompt, system_prompt=system_prompt, temperature=temperature)
+            raise LLMGenerationError("LLM_PROVIDER must be 'openai' or 'ollama'.")
 
     def _generate_openai(self, prompt: str, *, system_prompt: str, temperature: float) -> str:
         if not self.openai_client:

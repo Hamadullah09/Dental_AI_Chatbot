@@ -19,7 +19,12 @@ class ObservabilityManager:
     def initialize(self) -> None:
         if self._initialized:
             return
-        if not self.settings.prometheus_enabled:
+        # Was previously gated on prometheus_enabled (an unrelated flag) - OTel tracing
+        # and Prometheus metrics are two different systems with two different on/off
+        # switches; conflating them meant this could never be disabled independently.
+        # Also opentelemetry-* was never in requirements.txt, so this path always hit the
+        # except-ImportError branch below and silently no-op'd regardless (Phase 3).
+        if not self.settings.otel_enabled:
             return
 
         try:
@@ -32,14 +37,15 @@ class ObservabilityManager:
             resource = Resource.create({
                 "service.name": "dental-ai-chatbot",
                 "service.version": "1.0.0",
+                "deployment.environment": self.settings.environment,
             })
             provider = TracerProvider(resource=resource)
-            exporter = OTLPSpanExporter(endpoint="localhost:4317", insecure=True)
+            exporter = OTLPSpanExporter(endpoint=self.settings.otel_exporter_endpoint, insecure=True)
             provider.add_span_processor(BatchSpanProcessor(exporter))
             trace.set_tracer_provider(provider)
             self._tracer = trace.get_tracer("dental-ai-chatbot")
             self._initialized = True
-            logger.info("OpenTelemetry initialized")
+            logger.info(f"OpenTelemetry initialized, exporting to {self.settings.otel_exporter_endpoint}")
         except Exception as exc:
             logger.warning(f"OpenTelemetry initialization failed: {exc}")
             self._tracer = None

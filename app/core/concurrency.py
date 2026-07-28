@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
@@ -43,6 +44,22 @@ class ConcurrencyGate:
         except Exception:
             pass
 
+    def _observe_wait(self, waited_seconds: float) -> None:
+        try:
+            from app.middleware.metrics import GATE_WAIT_DURATION
+
+            GATE_WAIT_DURATION.labels(name=self.name).observe(waited_seconds)
+        except Exception:
+            pass
+
+    def _record_busy(self) -> None:
+        try:
+            from app.middleware.metrics import SERVICE_BUSY_TOTAL
+
+            SERVICE_BUSY_TOTAL.labels(name=self.name).inc()
+        except Exception:
+            pass
+
     @property
     def queue_depth(self) -> int:
         return self._waiting
@@ -54,10 +71,13 @@ class ConcurrencyGate:
 
     @contextmanager
     def acquire(self) -> Iterator[None]:
+        wait_start = time.monotonic()
         with self._lock:
             self._waiting += 1
             self._set_gauges()
         acquired = self._sync_sema.acquire(timeout=self.max_wait_seconds)
+        waited_seconds = time.monotonic() - wait_start
+        self._observe_wait(waited_seconds)
         with self._lock:
             self._waiting -= 1
             if acquired:
@@ -65,6 +85,7 @@ class ConcurrencyGate:
             self._set_gauges()
         if not acquired:
             logger.warning(f"concurrency_gate.busy name={self.name} max_wait={self.max_wait_seconds}")
+            self._record_busy()
             raise ServiceBusyError(self.name, self.max_wait_seconds)
         try:
             yield
@@ -76,6 +97,7 @@ class ConcurrencyGate:
 
     @asynccontextmanager
     async def acquire_async(self) -> AsyncIterator[None]:
+        wait_start = time.monotonic()
         with self._lock:
             self._waiting += 1
             self._set_gauges()
@@ -84,6 +106,8 @@ class ConcurrencyGate:
             await asyncio.wait_for(self._async_sema.acquire(), timeout=self.max_wait_seconds)
         except TimeoutError:
             acquired = False
+        waited_seconds = time.monotonic() - wait_start
+        self._observe_wait(waited_seconds)
         with self._lock:
             self._waiting -= 1
             if acquired:
@@ -91,6 +115,7 @@ class ConcurrencyGate:
             self._set_gauges()
         if not acquired:
             logger.warning(f"concurrency_gate.busy name={self.name} max_wait={self.max_wait_seconds}")
+            self._record_busy()
             raise ServiceBusyError(self.name, self.max_wait_seconds)
         try:
             yield

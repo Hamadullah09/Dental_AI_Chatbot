@@ -178,6 +178,59 @@ services:
     networks:
       - dental-network
 
+  # Phase 3: monitoring/prometheus.yml scraped redis:6379 and postgres:5432 directly for
+  # Prometheus metrics, which never worked - neither speaks Prometheus's text format on
+  # those ports without a sidecar exporter. These are that fix.
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    ports:
+      - "127.0.0.1:9121:9121"
+    depends_on:
+      - redis
+    networks:
+      - dental-network
+
+  postgres_exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://dental:${POSTGRES_PASSWORD:-change-this-postgres-password}@postgres:5432/dental_ai?sslmode=disable"
+    ports:
+      - "127.0.0.1:9187:9187"
+    depends_on:
+      - postgres
+    networks:
+      - dental-network
+
+  # Opt-in only: `docker compose --profile observability up`. Not started by a plain
+  # `docker compose up` - distributed tracing is a new infra dependency (Phase 3), not
+  # something to add to the default footprint silently.
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"  # Jaeger UI
+      - "127.0.0.1:4317:4317"    # OTLP gRPC receiver (matches OTEL_EXPORTER_ENDPOINT)
+    networks:
+      - dental-network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - dental-network
+
 volumes:
   postgres_data:
   qdrant_data:

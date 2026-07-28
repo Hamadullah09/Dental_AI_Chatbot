@@ -218,6 +218,13 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
     prometheus_path: str = "/metrics"
 
+    # OpenTelemetry distributed tracing (Phase 3). Off by default - turning it on requires
+    # both the opentelemetry-* packages (now in requirements.txt) AND a running OTLP
+    # collector to send spans to (Jaeger by default here - see the "observability" Docker
+    # Compose profile). This is a new infra dependency, not something to enable silently.
+    otel_enabled: bool = False
+    otel_exporter_endpoint: str = "localhost:4317"
+
     worker_concurrency: int = 4
     worker_max_retries: int = 3
     worker_retry_delay_seconds: int = 5

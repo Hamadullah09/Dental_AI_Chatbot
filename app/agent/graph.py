@@ -157,6 +157,12 @@ def retrieve_chunks(state: AgentState) -> AgentState:
         ]
         state.degradation_tier = tier.value
 
+        try:
+            from app.middleware.metrics import RETRIEVAL_HIT_TOTAL
+            RETRIEVAL_HIT_TOTAL.labels(hit="yes" if reranked else "no").inc()
+        except Exception:
+            pass
+
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("hybrid_retriever", "completed", f"{len(reranked)} chunks (mode={rag_mode}, tier={tier.value})", duration_ms)
 
