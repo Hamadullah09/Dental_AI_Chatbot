@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dental-ai-frontend
+  namespace: dental-ai
+  labels:
+    app: dental-ai-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dental-ai-frontend
+  template:
+    metadata:
+      labels:
+        app: dental-ai-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: dental-ai-frontend:latest  # built from ./frontend's Dockerfile
+          ports:
+            - containerPort: 3000
+          env:
+            - name: API_PROXY_URL
+              value: "http://dental-ai-api:8000"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dental-ai-frontend
+  namespace: dental-ai
+spec:
+  selector:
+    app: dental-ai-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dental-ai-frontend
+  namespace: dental-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dental-ai-frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

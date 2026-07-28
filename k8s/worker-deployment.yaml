@@ -1,0 +1,64 @@
+# The arq task queue worker (app/workers/tasks.py) - runs document ingestion out of the
+# request-serving path (Phase 4). Note this is CPU/memory-bound (chunking, OCR, embedding
+# model inference), so give it real resources and consider a dedicated node pool if
+# ingestion volume is high, separate from the api Deployment's node pool.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dental-ai-worker
+  namespace: dental-ai
+  labels:
+    app: dental-ai-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dental-ai-worker
+  template:
+    metadata:
+      labels:
+        app: dental-ai-worker
+    spec:
+      containers:
+        - name: worker
+          image: dental-ai-api:latest  # same image as the api Deployment
+          command: ["arq", "app.workers.tasks.WorkerSettings"]
+          envFrom:
+            - configMapRef:
+                name: dental-ai-config
+            - secretRef:
+                name: dental-ai-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploaded_docs
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: dental-ai-uploads
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dental-ai-worker
+  namespace: dental-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dental-ai-worker
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75

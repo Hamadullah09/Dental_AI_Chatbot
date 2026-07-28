@@ -14,7 +14,18 @@ from app.models import ChatSession, Message, MessageRole, User, UserMemory
 logger = get_logger(__name__)
 
 
+def _memory_cache():
+    from app.core.redis import RedisCache
+    settings = get_settings()
+    return RedisCache(prefix="memory_context", ttl=settings.memory_context_cache_ttl_seconds)
+
+
 class MemoryService:
+    """get_memory_context() runs on every turn that loads memory (load_memory_context in
+    app/agent/graph.py, and the streaming path) - a Postgres read (UserMemory + last 5
+    ChatSessions) per turn. Cached in Redis with a short TTL and explicit invalidation on
+    preference update (Phase 4), since preferences change rarely but are read constantly."""
+
     def get_or_create_memory(self, db: Session, user_id: str) -> UserMemory:
         memory = db.query(UserMemory).filter(UserMemory.user_id == user_id).first()
         if not memory:
@@ -42,6 +53,10 @@ class MemoryService:
                 memory.preferred_specialty = preferred_specialty
             memory.last_interaction_at = datetime.now(timezone.utc)
             db.commit()
+        try:
+            _memory_cache().delete(user_id)
+        except Exception:
+            pass
 
     def _extract_topics(self, question: str) -> list[str]:
         topic_keywords = {
@@ -75,16 +90,24 @@ class MemoryService:
             db.commit()
 
     def get_memory_context(self, user_id: str, db: Session | None = None) -> dict[str, Any]:
-        context: dict[str, Any] = {
-            "preferences": {},
-            "recent_topics": [],
-            "recent_sessions": [],
-        }
+        try:
+            cached = _memory_cache().get(user_id)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
 
         if db is None:
             with SessionLocal() as local_db:
-                return self._load_memory_context(local_db, user_id)
-        return self._load_memory_context(db, user_id)
+                context = self._load_memory_context(local_db, user_id)
+        else:
+            context = self._load_memory_context(db, user_id)
+
+        try:
+            _memory_cache().set(user_id, context)
+        except Exception:
+            pass
+        return context
 
     def _load_memory_context(self, db: Session, user_id: str) -> dict[str, Any]:
         memory = db.query(UserMemory).filter(UserMemory.user_id == user_id).first()

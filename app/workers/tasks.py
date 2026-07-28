@@ -126,7 +126,36 @@ async def reindex_dentists_task(ctx: dict[str, Any]) -> dict[str, Any]:
             return {"status": "failed", "error": str(exc)}
 
 
+def _build_redis_settings(*, fast_fail: bool = False):
+    from arq.connections import RedisSettings
+
+    settings = get_settings()
+    redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    if fast_fail:
+        # Used only when enqueuing from the API request path, where a slow/unresolvable
+        # Redis host must not hang the request (arq's defaults - conn_timeout=1,
+        # conn_retries=5 - can add up to several seconds, made worse on Windows where a
+        # bogus/unresolvable hostname's DNS lookup itself is slow; see
+        # docs/GAP_AUDIT_PHASE0.md's Ollama/host.docker.internal finding for the same
+        # underlying OS behavior). The long-running worker process (WorkerSettings below)
+        # keeps arq's normal retry behavior, since it should keep trying to reconnect.
+        redis_settings.conn_timeout = 1
+        redis_settings.conn_retries = 1
+        redis_settings.conn_retry_delay = 0
+    return redis_settings
+
+
 class WorkerSettings:
+    """Run with: arq app.workers.tasks.WorkerSettings
+
+    Phase 4: this module already existed with real task implementations
+    (ingest_document_task, cleanup jobs, dataset generation, dentist sync) but was never
+    actually wired up - nothing anywhere enqueued a job, and redis_settings returned an
+    already-connected aioredis client instead of the arq.connections.RedisSettings object
+    arq's worker bootstrap expects, which would have broken `arq worker ...` immediately
+    on the first real attempt to run it. See enqueue_ingestion_job() below for the
+    FastAPI-side half of actually using this."""
+
     functions = [
         ingest_document_task,
         cleanup_expired_tokens,
@@ -141,9 +170,56 @@ class WorkerSettings:
     retry_delay = 5
     max_tries = 3
     health_check_interval = 10
+    redis_settings = _build_redis_settings()
 
-    @classmethod
-    def redis_settings(cls) -> Any:
-        settings = get_settings()
-        from redis import asyncio as aioredis
-        return aioredis.from_url(settings.redis_url, decode_responses=True)
+
+async def enqueue_ingestion_job(document_id: str) -> bool:
+    """Enqueues document ingestion on the arq worker instead of running it in the API
+    process's background-task thread pool, so a large upload's chunking/embedding work
+    doesn't compete with request-serving for CPU (Phase 4). Returns False if the queue
+    couldn't be reached (Redis down, no worker running) so the caller can fall back to
+    running the same task in-process rather than losing the ingestion request.
+
+    Hard-bounded with asyncio.wait_for on top of fast_fail's already-short arq-level
+    retry settings: an unresolvable/unreachable Redis host must not hang the upload
+    request for more than ~2s before falling back - a real bug caught by this project's
+    own test suite hanging on a bogus 'redis' hostname outside its docker network."""
+    try:
+        from arq import create_pool
+
+        pool = await asyncio.wait_for(create_pool(_build_redis_settings(fast_fail=True)), timeout=2.0)
+        try:
+            await pool.enqueue_job("ingest_document_task", document_id)
+        finally:
+            await pool.close()
+        return True
+    except Exception as exc:
+        logger.warning(f"enqueue_ingestion_job.failed document_id={document_id} error={exc}")
+        return False
+
+
+def start_ingestion(document_id: str, *, inline_fallback: Any = None) -> None:
+    """Single entry point for both upload routers (app/routers/chat.py,
+    app/routers/admin.py): try to enqueue on the arq worker; if that's unreachable, fall
+    back to running ingestion in-process.
+
+    `inline_fallback`, if given, is a zero-arg callable the router provides (wrapping its
+    own `background_tasks.add_task(ingest_document_background, document_id)` call) - it's
+    a parameter rather than always calling ingest_document_task directly so that each
+    router's existing test suite, which monkeypatches ITS OWN module-level IngestionService
+    import (e.g. app.routers.chat.IngestionService), keeps working. This module's own
+    ingest_document_task imports IngestionService from app.services.ingestion directly and
+    would silently bypass that mock, running against a real (un-mocked) IngestionService
+    instead - the same class of bug documented in docs/GAP_AUDIT_PHASE0.md finding #1."""
+    try:
+        enqueued = asyncio.run(enqueue_ingestion_job(document_id))
+    except Exception:
+        enqueued = False
+    if enqueued:
+        return
+
+    logger.info(f"start_ingestion.queue_unavailable_running_inline document_id={document_id}")
+    if inline_fallback is not None:
+        inline_fallback()
+    else:
+        asyncio.run(ingest_document_task({}, document_id))

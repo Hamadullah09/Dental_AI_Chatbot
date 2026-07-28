@@ -141,6 +141,8 @@ class Settings(BaseSettings):
     embedding_breaker_reset_seconds: float = 15.0
     upload_idempotency_ttl_seconds: int = 86400
     degraded_answer_cache_ttl_seconds: int = 21600
+    embedding_cache_ttl_seconds: int = 86400
+    memory_context_cache_ttl_seconds: int = 300
     agent_graph_fallback_alert_rate_threshold: float = 0.02
 
     upload_dir: Path = Path("uploaded_docs")

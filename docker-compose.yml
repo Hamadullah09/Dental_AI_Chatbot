@@ -1,3 +1,9 @@
+# Phase 4: explicit resource limits on every service. These are starting-point defaults
+# for a small/medium single-node deployment, not benchmarked against real production
+# traffic - tune them against your actual hardware and the load-test results in
+# load_tests/ before relying on them. `docker compose` (v2 CLI) applies deploy.resources
+# limits outside of Swarm mode; if you're on the legacy python docker-compose v1 binary
+# these are ignored (upgrade to the v2 CLI, which is what's assumed everywhere else here).
 services:
   nginx:
     image: nginx:alpine
@@ -21,6 +27,11 @@ services:
       start_period: 10s
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
 
   api:
     build: .
@@ -57,6 +68,54 @@ services:
       start_period: 40s
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  # Phase 4: runs the arq task queue (app/workers/tasks.py) as its own process, separate
+  # from the request-serving api container, so document ingestion (chunking + embedding -
+  # CPU/memory heavy) doesn't compete with request handling. Falls back to running
+  # inline in the api process if this worker or Redis is unreachable - see
+  # app/workers/tasks.py::start_ingestion().
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["arq", "app.workers.tasks.WorkerSettings"]
+    # The Dockerfile's HEALTHCHECK curls port 8000, which this container never serves
+    # (it's a queue worker, not the API) - would otherwise always report "unhealthy".
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql+psycopg://dental:${POSTGRES_PASSWORD:-change-this-postgres-password}@postgres:5432/dental_ai
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      UPLOAD_DIR: /app/uploaded_docs
+      EXTRACTED_VISUALS_DIR: /app/uploads/extracted_visuals
+    volumes:
+      - ./uploaded_docs:/app/uploaded_docs
+      - ./uploads:/app/uploads
+      - ./knowledge_base:/app/knowledge_base
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
 
   frontend:
     build:
@@ -81,6 +140,11 @@ services:
       start_period: 30s
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   postgres:
     image: postgres:16-alpine
@@ -100,6 +164,11 @@ services:
       retries: 10
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   qdrant:
     image: qdrant/qdrant:v1.9.2
@@ -117,6 +186,11 @@ services:
       start_period: 10s
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
 
   redis:
     image: redis:7-alpine
@@ -133,6 +207,11 @@ services:
       retries: 5
     networks:
       - dental-network
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
 
   prometheus:
     image: prom/prometheus:v2.53.0

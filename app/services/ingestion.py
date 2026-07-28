@@ -466,6 +466,11 @@ class IngestionService:
             document.ingestion_completed_at = datetime.utcnow()
             db.add(DocumentIngestionLog(document_id=document.id, level="info", message=f"Ingestion completed with {len(points)} chunks and {visual_count} visuals."))
             commit_with_retry(db)
+            try:
+                from app.services.retrieval_cache import bump_generation
+                bump_generation()
+            except Exception:
+                pass
             return len(points)
         except Exception as exc:
             mark_ingestion_failed(db, document.id, str(exc))

@@ -1,0 +1,35 @@
+# Assumes an ingress-nginx controller and cert-manager are already installed in-cluster
+# (both are cluster-level additions - flag before installing if they aren't there yet).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dental-ai
+  namespace: dental-ai
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"  # matches MAX_UPLOAD_MB
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"  # chat generation can be slow
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dental-ai.example.com  # replace with your real domain
+      secretName: dental-ai-tls
+  rules:
+    - host: dental-ai.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: dental-ai-api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dental-ai-frontend
+                port:
+                  number: 3000

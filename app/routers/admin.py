@@ -18,6 +18,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def ingest_document_background(document_id: str) -> None:
+    """Last-resort fallback if app.workers.tasks.start_ingestion() itself raises - see
+    that function for the primary enqueue-or-run-inline path (Phase 4)."""
     with SessionLocal() as db:
         document = db.get(Document, document_id)
         if not document:
@@ -27,6 +29,17 @@ def ingest_document_background(document_id: str) -> None:
         except Exception:
             # The ingestion service persists failed status and error details.
             return
+
+
+def start_ingestion(background_tasks: BackgroundTasks, document_id: str) -> None:
+    try:
+        from app.workers.tasks import start_ingestion as _start_ingestion
+        _start_ingestion(
+            document_id,
+            inline_fallback=lambda: background_tasks.add_task(ingest_document_background, document_id),
+        )
+    except Exception:
+        background_tasks.add_task(ingest_document_background, document_id)
 
 
 @router.get("/dataset/status", response_model=DatasetGenerationStatus)
@@ -151,7 +164,7 @@ def upload_document(
         document.error_message = None
         db.commit()
         db.refresh(document)
-        background_tasks.add_task(ingest_document_background, document.id)
+        start_ingestion(background_tasks, document.id)
         return document
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -177,7 +190,7 @@ def reingest_document(
         document.ingestion_completed_at = None
         db.commit()
         db.refresh(document)
-        background_tasks.add_task(ingest_document_background, document.id)
+        start_ingestion(background_tasks, document.id)
         return document
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Document re-ingest failed: {exc}")
@@ -201,6 +214,12 @@ def delete_document(
     db.commit()
     if storage_path.exists():
         storage_path.unlink()
+
+    try:
+        from app.services.retrieval_cache import bump_generation
+        bump_generation()
+    except Exception:
+        pass
 
 
 @router.post("/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)

@@ -10,7 +10,7 @@ class DentalAIUser(HttpUser):
     def on_start(self):
         response = self.client.post("/api/auth/login", json={
             "email": "admin@example.com",
-            "password": "admin123456"
+            "password": "admin123"
         })
         if response.status_code == 200:
             data = response.json()
@@ -71,7 +71,7 @@ class AdminUser(HttpUser):
     def on_start(self):
         response = self.client.post("/api/auth/login", json={
             "email": "admin@example.com",
-            "password": "admin123456"
+            "password": "admin123"
         })
         if response.status_code == 200:
             data = response.json()

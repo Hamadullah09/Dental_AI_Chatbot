@@ -48,12 +48,21 @@ def _is_transient_local_inference_error(exc: Exception) -> bool:
 class ResilientEmbeddingModel:
     """Wraps encode() with a circuit breaker + short retry budget, so a transient resource
     spike (e.g. concurrent-load GPU OOM) doesn't take down every retrieval call, while a
-    persistently broken model fails fast instead of retrying forever (Phase 1)."""
+    persistently broken model fails fast instead of retrying forever (Phase 1). Also
+    caches single-text encodes in Redis (Phase 4) - repeated/common questions are a
+    realistic pattern for a patient-education chatbot, and unlike caching a full RAG
+    answer, an embedding vector for identical text has no role/session dependency at all,
+    so it's always safe to reuse regardless of who asks or what filters apply."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, model_name: str = "default") -> None:
         self._model = model
+        self._model_name = model_name
 
     def encode(self, *args: Any, **kwargs: Any) -> Any:
+        cached = self._try_cache_lookup(*args, **kwargs)
+        if cached is not None:
+            return cached
+
         def _call() -> Any:
             return self._model.encode(*args, **kwargs)
 
@@ -67,7 +76,51 @@ class ResilientEmbeddingModel:
                 name="embedding.encode",
             )
 
-        return embedding_breaker.call(_with_retry)
+        result = embedding_breaker.call(_with_retry)
+        self._try_cache_store(result, *args, **kwargs)
+        return result
+
+    def _single_text(self, args: tuple, kwargs: dict) -> str | None:
+        texts = args[0] if args else kwargs.get("texts") or kwargs.get("sentences")
+        if isinstance(texts, str):
+            return texts
+        if isinstance(texts, list) and len(texts) == 1 and isinstance(texts[0], str):
+            return texts[0]
+        return None
+
+    def _cache_key(self, text: str) -> str:
+        digest = hashlib.sha256(f"{self._model_name}:{text}".encode()).hexdigest()
+        return digest
+
+    def _try_cache_lookup(self, *args: Any, **kwargs: Any) -> Any | None:
+        text = self._single_text(args, kwargs)
+        if text is None:
+            return None
+        try:
+            from app.core.redis import RedisCache
+            cache = RedisCache(prefix="embedding_cache")
+            cached = cache.get(self._cache_key(text))
+            if cached is None:
+                return None
+            was_list = bool(args and isinstance(args[0], list)) or "texts" in kwargs or "sentences" in kwargs
+            vector = np.array(cached, dtype=np.float32)
+            return np.array([vector]) if was_list else vector
+        except Exception:
+            return None
+
+    def _try_cache_store(self, result: Any, *args: Any, **kwargs: Any) -> None:
+        text = self._single_text(args, kwargs)
+        if text is None:
+            return
+        try:
+            from app.core.redis import RedisCache
+            settings = get_settings()
+            cache = RedisCache(prefix="embedding_cache", ttl=settings.embedding_cache_ttl_seconds)
+            vector = np.asarray(result)
+            flat = vector[0] if vector.ndim == 2 else vector
+            cache.set(self._cache_key(text), flat.tolist())
+        except Exception:
+            pass
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._model, name)
@@ -79,6 +132,6 @@ def get_embedding_model():
     try:
         from sentence_transformers import SentenceTransformer
 
-        return ResilientEmbeddingModel(SentenceTransformer(settings.embedding_model_name))
+        return ResilientEmbeddingModel(SentenceTransformer(settings.embedding_model_name), model_name=settings.embedding_model_name)
     except Exception:
-        return ResilientEmbeddingModel(HashingEmbeddingModel())
+        return ResilientEmbeddingModel(HashingEmbeddingModel(), model_name="hashing-fallback")

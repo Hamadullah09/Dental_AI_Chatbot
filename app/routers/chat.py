@@ -67,6 +67,10 @@ chat_rate_limiter = RateLimiter(prefix="ratelimit:chat")
 
 
 def ingest_user_document_background(document_id: str) -> None:
+    """Runs in the API process's BackgroundTasks thread pool - kept only as the very last
+    resort if app.workers.tasks.start_ingestion() itself raises (it already tries the arq
+    queue, falling back to running the task inline); see start_ingestion for the primary
+    path (Phase 4)."""
     with SessionLocal() as db:
         document = db.get(Document, document_id)
         if not document:
@@ -75,6 +79,17 @@ def ingest_user_document_background(document_id: str) -> None:
             IngestionService().ingest_document(db, document)
         except Exception:
             return
+
+
+def start_ingestion(background_tasks: BackgroundTasks, document_id: str) -> None:
+    try:
+        from app.workers.tasks import start_ingestion as _start_ingestion
+        _start_ingestion(
+            document_id,
+            inline_fallback=lambda: background_tasks.add_task(ingest_user_document_background, document_id),
+        )
+    except Exception:
+        background_tasks.add_task(ingest_user_document_background, document_id)
 
 
 def _sources_to_json(sources: list, visuals: list | None = None) -> str:
@@ -504,7 +519,7 @@ def upload_chat_document(
             )
         db.commit()
         db.refresh(document)
-        background_tasks.add_task(ingest_user_document_background, document.id)
+        start_ingestion(background_tasks, document.id)
         return document
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

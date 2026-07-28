@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dental-ai-api
+  namespace: dental-ai
+  labels:
+    app: dental-ai-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dental-ai-api
+  template:
+    metadata:
+      labels:
+        app: dental-ai-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/api/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+        - name: api
+          image: dental-ai-api:latest  # replace with your registry/tag; built from the repo's Dockerfile
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: dental-ai-config
+            - secretRef:
+                name: dental-ai-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/live
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 5
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploaded_docs
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: dental-ai-uploads
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dental-ai-uploads
+  namespace: dental-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dental-ai-api
+  namespace: dental-ai
+spec:
+  selector:
+    app: dental-ai-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

@@ -114,13 +114,22 @@ def retrieve_chunks(state: AgentState) -> AgentState:
         from app.core.resilience import CircuitBreakerOpenError
         from app.services.degradation import DegradationTier, keyword_only_retrieve
         from app.services.rag import RAGService
+        from app.services.retrieval_cache import cache_chunks, get_cached_chunks
 
-        rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
         variants = state.query_variants or [query]
         rag_mode = settings.rag_mode
 
+        cached_chunks = get_cached_chunks(query, rag_mode, top_k, state.filters)
+        if cached_chunks is not None:
+            state.retrieved_chunks = cached_chunks
+            state.degradation_tier = DegradationTier.full_hybrid.value
+            duration_ms = (time.perf_counter() - start) * 1000
+            state.add_trace("hybrid_retriever", "completed", f"{len(cached_chunks)} chunks (cache hit)", duration_ms)
+            return state
+
+        rag = RAGService()
         tier = DegradationTier.full_hybrid
         try:
             reranked = _run_requested_retrieval_mode(rag, rag_mode, query, variants, top_k, state.filters, settings)
@@ -156,6 +165,12 @@ def retrieve_chunks(state: AgentState) -> AgentState:
             for chunk in reranked
         ]
         state.degradation_tier = tier.value
+
+        # Only cache genuine full_hybrid results (Phase 4) - caching a degraded-tier
+        # result would silently keep serving keyword-only-quality answers as "normal"
+        # long after Qdrant recovers, for the TTL duration.
+        if tier == DegradationTier.full_hybrid:
+            cache_chunks(query, rag_mode, top_k, state.filters, state.retrieved_chunks)
 
         try:
             from app.middleware.metrics import RETRIEVAL_HIT_TOTAL

@@ -36,6 +36,22 @@ def fake_redis(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_task_queue(monkeypatch):
+    """app.workers.tasks.enqueue_ingestion_job() makes a real arq/Redis connection
+    attempt independent of the fake_redis fixture above (arq manages its own connection,
+    it doesn't go through app.core.redis.get_redis). Without this, every upload-endpoint
+    test pays a real (bounded, but non-zero) network-timeout cost attempting to reach a
+    'redis' hostname that doesn't resolve outside the docker-compose network - tests
+    should never depend on that, so force the queue-unavailable fallback path instantly."""
+    import app.workers.tasks as tasks_module
+
+    async def _always_unavailable(document_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(tasks_module, "enqueue_ingestion_job", _always_unavailable)
+
+
+@pytest.fixture(autouse=True)
 def reset_circuit_breakers():
     from app.core.resilience import embedding_breaker, ollama_breaker, qdrant_breaker
 

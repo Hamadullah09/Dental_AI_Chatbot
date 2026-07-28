@@ -1,0 +1,23 @@
+# Non-secret configuration only. Anything sensitive (JWT_SECRET_KEY, FIELD_ENCRYPTION_KEY,
+# POSTGRES_PASSWORD, ADMIN_PASSWORD, API keys) belongs in secret.yaml / a real secrets
+# manager (Vault, AWS Secrets Manager, External Secrets Operator) - never here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dental-ai-config
+  namespace: dental-ai
+data:
+  ENVIRONMENT: "production"
+  API_PREFIX: "/api"
+  DATABASE_URL: "postgresql+psycopg://dental@postgres:5432/dental_ai"
+  QDRANT_URL: "http://qdrant:6333"
+  REDIS_URL: "redis://redis:6379/0"
+  LLM_PROVIDER: "ollama"
+  OLLAMA_BASE_URL: "http://ollama:11434"
+  OLLAMA_MODEL: "qwen3:14b"
+  OLLAMA_VISION_MODEL: "qwen2.5vl:7b"
+  OLLAMA_MAX_CONCURRENT_REQUESTS: "2"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "120"
+  PROMETHEUS_ENABLED: "true"
+  OTEL_ENABLED: "false"
+  LOG_FORMAT: "json"

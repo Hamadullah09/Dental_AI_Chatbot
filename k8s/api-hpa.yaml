@@ -1,0 +1,50 @@
+# HPA driven primarily by request queue depth, not just CPU (per the Phase 4 requirement)
+# - CPU alone doesn't capture the real bottleneck here: the API process spends most of a
+# slow request *waiting* on Ollama/Qdrant, not burning CPU, so CPU-only autoscaling would
+# under-scale exactly when things are backed up.
+#
+# REQUIRES: prometheus-adapter installed in-cluster, configured to expose
+# concurrency_gate_queue_depth{name="ollama"} as a Kubernetes custom metric. This is a
+# real, non-trivial cluster addition (a new infra dependency) - see k8s/README.md for the
+# prometheus-adapter rule needed and why a plain HPA can't query Prometheus directly. If
+# you haven't installed it yet, remove the "Pods" metric block below and this still works
+# as a CPU-only HPA in the meantime.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dental-ai-api
+  namespace: dental-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dental-ai-api
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: dental_ai_ollama_queue_depth
+        target:
+          type: AverageValue
+          averageValue: "3"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
