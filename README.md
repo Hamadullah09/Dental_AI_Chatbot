@@ -820,11 +820,9 @@ Nginx Reverse Proxy (port 80)
               └─────┬─────┴───────────┘
                     ▼
               Hybrid Retrieval
-              ┌─────┴─────┐
-              ▼           ▼
-         Qdrant Text  Qdrant Visual
-              │           │
-              └─────┬─────┘
+                    ▼
+        Qdrant (single collection,
+      payload_type: text | visual)
                     ▼
               Context Builder
                     ▼
@@ -847,6 +845,23 @@ Nginx Reverse Proxy (port 80)
 | Embedding | < 100ms | 30-80ms |
 | API Response | < 200ms | 50-150ms |
 | Concurrent Users | 50+ | 100+ |
+
+---
+
+## Documentation
+
+This README covers first-time deployment. For everything else:
+
+| Doc | What it's for |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system actually works (retrieval, the LangGraph agent, roles) |
+| [docs/adr/](docs/adr/) | Why it's built this way - one record per significant design decision |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | What to do when Ollama/Qdrant is down, latency spikes, or citation quality drops |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deeper deployment reference, plus blue-green/canary rollout and Ollama model-swap strategy |
+| [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | PHI-adjacent data handling posture |
+| [docs/API.md](docs/API.md) | API reference (also served live at `/docs` per the running app) |
+| [k8s/README.md](k8s/README.md) | Kubernetes deployment path, if not using docker-compose |
+| [docs/GAP_AUDIT_PHASE0.md](docs/GAP_AUDIT_PHASE0.md) | The audit that motivated this hardening pass, for historical context |
 
 ---
 

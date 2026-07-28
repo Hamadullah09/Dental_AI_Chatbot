@@ -24,14 +24,33 @@ covering Phases 0-6 in `docs/GAP_AUDIT_PHASE0.md`) vs. genuinely still open.
   submitted but never reviewed.
 - Citation verification exists (`app/agent/nodes/citation_verifier.py`) but is a
   word-overlap heuristic, not a real verifier - see the "RAG Quality" gaps below, this is
-  not resolved, just more precisely characterized now.
+  not resolved, just more precisely characterized now. Phase 6 added an integration test
+  (`tests/test_rag_pipeline_integration.py`) against a real (embedded) Qdrant collection
+  covering the grounded-answer and trimmed-hallucination cases, and documented (rather
+  than silently left) a real edge case: short answers (<=3 sentences after trimming) are
+  flagged internally but not edited - see that test file and `docs/RUNBOOK.md`'s citation
+  pass rate drop scenario.
 - Safety classifiers for emergency scenarios: red-flag patterns now short-circuit to a
   fixed triage message instead of running the full generation pipeline (Phase 5a).
   Medication/pediatric/pregnancy-specific classifiers are still regex heuristics, not a
   verified system - see below.
 - CI for linting, tests, and dependency scanning already existed but `mypy`/`safety`/
   `bandit` were all piped through `|| true`, so none of them could actually fail the
-  build - see Phase 6 for what's still `|| true` and why.
+  build. Phase 6 fixed this for real: `mypy` now runs a baseline ratchet
+  (`scripts/mypy_baseline_gate.py`, `mypy_baseline.txt` - fails only on *new* errors, not
+  the ~166 pre-existing ones in untouched legacy modules); `bandit` and `safety` are now
+  genuinely blocking, with every finding either fixed or suppressed with a documented,
+  time-boxed reason (`pyproject.toml`'s `[tool.bandit]`, `.safety-policy.yml`) - see
+  `docs/adr/0013-mypy-baseline-ratchet.md` and `docs/adr/0014-bandit-safety-ci-gates.md`.
+- OpenAPI schema drift: `docs/openapi.json` is now a committed, CI-checked snapshot
+  (`scripts/check_openapi_sync.py`) instead of undocumented/unchecked (Phase 7).
+- Blue-green/canary deployment and Ollama model-version-swap strategy: documented in
+  `docs/DEPLOYMENT.md` for both the docker-compose and Kubernetes paths (Phase 6) - not
+  automated, and the real-canary (Argo Rollouts/service mesh) option is explicitly
+  flagged as a new infra dependency needing its own evaluation, not built.
+- Architecture decisions from Phases 1-6 are now recorded in `docs/adr/` and an
+  operational runbook exists (`docs/RUNBOOK.md`) covering Ollama-down, Qdrant-degraded,
+  latency-spike, and citation-pass-rate-drop scenarios (Phase 7).
 
 ## Still genuinely open
 

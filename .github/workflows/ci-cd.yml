@@ -88,6 +88,19 @@ jobs:
         run: |
           python scripts/ci_retrieval_gate.py
 
+      # Phase 7: docs/openapi.json is a committed snapshot of the FastAPI schema - nothing
+      # previously checked it stayed in sync with the real routes/models, so a field could
+      # be added/renamed/removed with no signal the docs (or an external API consumer
+      # relying on them) had gone stale. See scripts/check_openapi_sync.py.
+      - name: OpenAPI schema sync check
+        env:
+          DATABASE_URL: postgresql+psycopg://dental:test-password@localhost:5432/dental_ai_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENVIRONMENT: testing
+        run: |
+          python scripts/check_openapi_sync.py
+
   security:
     runs-on: ubuntu-latest
     steps:

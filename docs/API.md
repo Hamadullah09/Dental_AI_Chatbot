@@ -1,5 +1,11 @@
 # Dental AI Chatbot - API Documentation
 
+This is a hand-written reference. The generated, authoritative schema (kept in sync with
+the actual FastAPI routes via `scripts/check_openapi_sync.py`, a CI-blocking check as of
+Phase 7) lives at [`docs/openapi.json`](openapi.json) and is also served live at `/docs`
+(Swagger UI) and `/redoc` on a running instance - if this file and the live schema ever
+disagree, the live schema is correct.
+
 ## Base URL
 
 ```
