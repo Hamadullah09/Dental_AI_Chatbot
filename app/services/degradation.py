@@ -70,7 +70,7 @@ def keyword_only_retrieve(
     candidate_limit = max(20, top_k * 4)
     text_filters = {**(filters or {}), "payload_type": "text"}
     keyword_chunks = rag.keyword_search(question, candidate_limit, text_filters)
-    reranked = rerank_chunks(question, keyword_chunks)
+    reranked = rerank_chunks(question, keyword_chunks, user_role=(filters or {}).get("user_role"))
     relevant = [
         chunk
         for chunk in reranked

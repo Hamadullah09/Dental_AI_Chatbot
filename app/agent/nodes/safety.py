@@ -109,6 +109,22 @@ def neutralize_retrieved_content(text: str) -> tuple[str, list[str]]:
     return cleaned, matched
 
 
+EMERGENCY_TRIAGE_MESSAGE = (
+    "**This may be a dental emergency.** Symptoms like these (facial swelling with fever, "
+    "difficulty breathing or swallowing, uncontrolled bleeding, a knocked-out tooth, or "
+    "an eye that is swollen shut) can become serious quickly and need to be checked by a "
+    "professional in person, not decided from a chat answer.\n\n"
+    "**Please seek immediate care now:**\n"
+    "- Go to an emergency room or call emergency services if you have trouble breathing "
+    "or swallowing, or swelling that is spreading toward your eye or throat.\n"
+    "- Otherwise, contact an emergency dental clinic or your dentist's emergency line "
+    "right away.\n\n"
+    "This message is intentionally general - it is not a diagnosis, and I have not looked "
+    "at the retrieved dental library for this question, because a red-flag emergency "
+    "shouldn't wait on that. A licensed professional needs to assess you directly."
+)
+
+
 def run_safety_check(state: AgentState) -> AgentState:
     start = time.perf_counter()
     question_lower = state.question.lower()
@@ -122,10 +138,24 @@ def run_safety_check(state: AgentState) -> AgentState:
     state.safety_flags = all_flags
 
     if any(f.startswith("medical_emergency") for f in all_flags):
+        # Phase 5a: deterministic short-circuit straight to a fixed triage message,
+        # bypassing retrieval/generation entirely - the graph's conditional edge on
+        # run_safety_check routes this straight to format_response (see
+        # app/agent/graph.py's build_langgraph). Previously "emergency" only changed the
+        # SYSTEM PROMPT ("start with URGENT:...") while still running the full RAG
+        # pipeline and hoping the LLM followed that instruction - not acceptable for
+        # presentations that can indicate airway compromise (e.g. Ludwig's angina).
+        # Applies regardless of role: a dentist or student asking about a genuinely
+        # life-threatening presentation should get the same deterministic answer, not a
+        # generated one, since the content itself is the risk, not who's asking.
         state.intent = "emergency"
         state.safety_check_passed = True
-        state.explainability_notes.append("Emergency situation detected - prioritizing urgent response")
-        state.add_trace("safety_checker", "emergency", "Medical emergency detected")
+        state.answer = EMERGENCY_TRIAGE_MESSAGE
+        state.answer_mode = "emergency_triage"
+        state.confidence_level = "high"
+        state.confidence_score = 1.0
+        state.explainability_notes.append("Emergency red-flag pattern matched - short-circuited to a fixed triage message")
+        state.add_trace("safety_checker", "emergency", "Medical emergency detected - short-circuited to triage message")
     elif all_flags:
         state.safety_check_passed = False
         blocked_types = set(f.split(":")[0] for f in all_flags)

@@ -70,7 +70,7 @@ def _run_requested_retrieval_mode(rag, rag_mode: str, query: str, variants: list
                     seen_keys.add(key)
                     all_chunks.append(chunk)
         merged = merge_chunks(all_chunks)
-        return rerank_chunks(query, merged)
+        return rerank_chunks(query, merged, user_role=filters.get("user_role"))
     elif rag_mode == "corrective" or rag_mode == "self_rag":
         initial = rag.retrieve(query, top_k=top_k, filters=filters)
         from app.services.rag import retrieval_confidence
@@ -89,7 +89,7 @@ def _run_requested_retrieval_mode(rag, rag_mode: str, query: str, variants: list
                     seen_keys.add(key)
                     all_chunks.append(chunk)
         merged = merge_chunks(all_chunks)
-        return rerank_chunks(query, merged)
+        return rerank_chunks(query, merged, user_role=filters.get("user_role"))
     elif rag_mode == "hyde":
         initial = rag.retrieve(query, top_k=top_k, filters=filters)
         from app.services.rag import retrieval_confidence
@@ -100,7 +100,7 @@ def _run_requested_retrieval_mode(rag, rag_mode: str, query: str, variants: list
             hyde_chunks = rag.retrieve(hypothetical, top_k=top_k, filters=filters)
             all_chunks = initial + hyde_chunks
             merged = merge_chunks(all_chunks)
-            return rerank_chunks(query, merged)
+            return rerank_chunks(query, merged, user_role=filters.get("user_role"))
         return initial
     else:
         return rag.retrieve(query, top_k=top_k, filters=filters)
@@ -546,11 +546,21 @@ def build_langgraph():
 
     workflow.set_entry_point("run_safety_check")
 
+    def _route_after_safety_check(state: AgentState) -> str:
+        if not state.safety_check_passed and state.answer_mode == "safety_blocked":
+            return "blocked"
+        if state.answer_mode == "emergency_triage":
+            # Phase 5a: red-flag emergency detected - state.answer is already the fixed
+            # triage message set in run_safety_check(); skip retrieval/generation entirely.
+            return "emergency_triage"
+        return "continue"
+
     workflow.add_conditional_edges(
         "run_safety_check",
-        lambda state: "blocked" if not state.safety_check_passed and state.answer_mode == "safety_blocked" else "continue",
+        _route_after_safety_check,
         {
             "blocked": "format_response",
+            "emergency_triage": "format_response",
             "continue": "load_memory_context",
         },
     )

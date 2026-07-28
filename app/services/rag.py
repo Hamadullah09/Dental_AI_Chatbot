@@ -88,7 +88,7 @@ class RAGService:
             vector_chunks = self.vector_search(vector, candidate_limit, build_qdrant_filter({"payload_type": "text"}))
             keyword_chunks = self.keyword_search(retrieval_question, candidate_limit, {"payload_type": "text"}) if self.settings.enable_keyword_search else []
             merged = filter_chunks_for_question(question, merge_chunks(vector_chunks + keyword_chunks), allow_noisy=allow_noisy)
-        reranked = rerank_chunks(question, merged)
+        reranked = rerank_chunks(question, merged, user_role=(filters or {}).get("user_role"))
         relevant = [
             chunk
             for chunk in reranked
@@ -132,7 +132,7 @@ class RAGService:
                     neighbor.metadata["adjacent_to_selected"] = True
                     expanded.append(neighbor)
         merged = merge_chunks(expanded)
-        reranked = rerank_chunks(question, merged)
+        reranked = rerank_chunks(question, merged, user_role=(filters or {}).get("user_role"))
         return sorted(
             reranked,
             key=lambda chunk: (
@@ -270,7 +270,7 @@ class RAGService:
         for variant in variants:
             candidates.extend(self.retrieve(variant, top_k=max(5, top_k or self.settings.retrieval_top_k), filters=filters))
         merged = merge_chunks(candidates)
-        reranked = rerank_chunks(original_question, merged)
+        reranked = rerank_chunks(original_question, merged, user_role=(filters or {}).get("user_role"))
         relevant = [
             chunk
             for chunk in reranked
@@ -294,7 +294,7 @@ class RAGService:
         logger.info("rag.hyde.used")
         hyde_chunks = self.retrieve(hypothetical, top_k=max(5, top_k or self.settings.retrieval_top_k), filters=filters)
         merged = merge_chunks(initial + hyde_chunks)
-        reranked = rerank_chunks(original_question, merged)
+        reranked = rerank_chunks(original_question, merged, user_role=(filters or {}).get("user_role"))
         relevant = [
             chunk
             for chunk in reranked
@@ -1996,8 +1996,15 @@ def list_filter_values(value) -> list:
 
 
 def default_trust_levels(user_role: str | None) -> list[str]:
+    """Phase 5a fix for finding #2: both branches previously returned the identical
+    list, so despite the architecture doc's claim of role-based retrieval, trust-level
+    filtering never actually differed by role. Policy decision (confirm with product
+    owner if a different split is wanted): patients get only fully-vetted (high-trust)
+    content by default; dentists/students can also see medium-trust content, matching
+    the broader evidence base default_document_types() already gives them (e.g.
+    research_article is excluded for patients but included for other roles)."""
     if user_role == "patient":
-        return ["high", "medium"]
+        return ["high"]
     return ["high", "medium"]
 
 
@@ -2038,9 +2045,23 @@ def merge_chunks(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     return list(merged.values())
 
 
-def rerank_chunks(question: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+# Phase 5a: role-aware document-type preference at rerank time, not just the
+# document_types/trust_levels retrieval FILTER (default_document_types/default_trust_levels
+# above). A dentist and a patient can both retrieve a mix of guideline and
+# patient_education chunks for the same question; this nudges which ones rank higher for
+# each persona rather than excluding either outright. Policy/tuning values, not derived
+# from data - revisit if persona eval (Phase 5a eval set) shows they're mistuned.
+_ROLE_DOCUMENT_TYPE_BOOST: dict[str, dict[str, float]] = {
+    "dentist": {"guideline": 0.15, "research_article": 0.15, "patient_education": -0.1},
+    "dental_student": {"textbook": 0.15, "guideline": 0.1, "patient_education": -0.05},
+    "patient": {"patient_education": 0.15, "guideline": 0.05, "research_article": -0.15},
+}
+
+
+def rerank_chunks(question: str, chunks: list[RetrievedChunk], user_role: str | None = None) -> list[RetrievedChunk]:
     terms = question_keywords(question)
     cross_scores = bge_rerank_scores(question, chunks)
+    role_boosts = _ROLE_DOCUMENT_TYPE_BOOST.get(normalize_user_role(user_role), {}) if user_role else {}
     for chunk in chunks:
         trust_boost = {"high": 0.25, "medium": 0.1, "low": -0.25}.get(str(chunk.metadata.get("trust_level")), 0.0)
         review_boost = 0.2 if chunk.metadata.get("review_status") == "approved" else -0.2
@@ -2049,6 +2070,7 @@ def rerank_chunks(question: str, chunks: list[RetrievedChunk]) -> list[Retrieved
         lexical = keyword_score(chunk.text, terms)
         relevance = query_context_relevance_score(question, chunk)
         noise_penalty = -1.0 if chunk.metadata.get("is_noisy") else 0.0
+        document_type_boost = role_boosts.get(str(chunk.metadata.get("document_type")), 0.0)
         chunk.rerank_score = (
             chunk.vector_score
             + (chunk.keyword_score * 0.35)
@@ -2059,6 +2081,7 @@ def rerank_chunks(question: str, chunks: list[RetrievedChunk]) -> list[Retrieved
             + review_boost
             + quality_boost
             + noise_penalty
+            + document_type_boost
         )
         chunk.metadata["query_relevance_score"] = relevance
         chunk.citation.score = chunk.rerank_score

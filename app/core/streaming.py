@@ -80,22 +80,26 @@ async def stream_chat_response(
     try:
         run_safety_check(state)
 
-        if not state.safety_check_passed:
+        if not state.safety_check_passed or state.answer_mode == "emergency_triage":
+            # Phase 5a: mirrors the non-streaming graph's short-circuit (see
+            # app/agent/graph.py's _route_after_safety_check) - a red-flag emergency
+            # skips retrieval/generation entirely rather than streaming a generated
+            # answer, same as the safety-blocked case just below it.
             if not state.answer:
                 state.answer = "I cannot process this request. Please ask a dental health question."
             yield f"data: {json.dumps({'type': 'content', 'text': state.answer})}\n\n"
             blocked_meta = json.dumps({
                 'type': 'metadata_extended',
-                'confidence_level': 'blocked',
-                'confidence_score': 0,
-                'explainability_notes': ['Request blocked by safety system'],
+                'confidence_level': state.confidence_level if state.answer_mode == "emergency_triage" else 'blocked',
+                'confidence_score': state.confidence_score if state.answer_mode == "emergency_triage" else 0,
+                'explainability_notes': state.explainability_notes or ['Request blocked by safety system'],
                 'follow_up_suggestions': [],
                 'intent': state.intent,
                 'sub_intent': state.sub_intent,
                 'answer_mode': state.answer_mode or 'safety_blocked',
             })
             yield f"data: {blocked_meta}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'disclaimer': ''})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'disclaimer': settings.medical_disclaimer if state.answer_mode == 'emergency_triage' else ''})}\n\n"
             yield "data: [DONE]\n\n"
             return
 

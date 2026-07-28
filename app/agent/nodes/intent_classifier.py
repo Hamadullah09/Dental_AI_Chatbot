@@ -149,6 +149,17 @@ def classify_intent(state: AgentState) -> AgentState:
         logger.debug(f"LLM intent classification failed, using keyword fallback: {exc}")
         _keyword_intent_fallback(state, question_lower)
 
+    # Phase 5a: role threading. Previously simplify_for_patient depended entirely on how
+    # the question was phrased (LLM/keyword judgment), regardless of who was asking - a
+    # patient who phrased a question in clinical-sounding terms got a dense answer, and a
+    # dentist who happened to phrase something plainly got simplified. The patient
+    # persona's "plain language always" requirement should not be conditional on
+    # phrasing; force it on for the patient role (dentist/student can still trigger it
+    # via their own explicit request, left alone here).
+    from app.services.rag import normalize_user_role
+    if normalize_user_role(state.user_role) == "patient":
+        state.simplify_for_patient = True
+
     duration_ms = (time.perf_counter() - start) * 1000
     state.add_trace("intent_classifier", "completed", f"Intent: {state.intent} (confidence: {state.intent_confidence:.2f})", duration_ms)
     return state

@@ -61,6 +61,13 @@ SUGGESTION_MAP: dict[str, list[str]] = {
 }
 
 
+STUDENT_ACTIVE_RECALL_SUGGESTIONS = [
+    "Test yourself: how would you explain the mechanism behind this to a classmate?",
+    "Want a practice question on this topic to check your understanding?",
+    "How does this connect to a related concept you've studied?",
+]
+
+
 def generate_follow_up_suggestions(state: AgentState) -> AgentState:
     start = time.perf_counter()
 
@@ -69,14 +76,22 @@ def generate_follow_up_suggestions(state: AgentState) -> AgentState:
         state.add_trace("follow_up_generator", "skipped", f"Mode: {state.answer_mode}")
         return state
 
-    suggestions = list(SUGGESTION_MAP.get(state.intent, SUGGESTION_MAP["general"]))
+    from app.services.rag import normalize_user_role
+    role = normalize_user_role(state.user_role)
 
-    if state.simplify_for_patient:
+    if state.simplify_for_patient or role == "patient":
         suggestions = [
             "Would you like me to explain this in even simpler terms?",
             "Should I break down the key points for you?",
             "Want to learn about related dental care tips?",
         ]
+    elif role == "dental_student" and state.intent not in ("conversational", "general"):
+        # Phase 5a: active-recall prompts for the student persona - teaching-oriented,
+        # tied to whatever topic the answer just covered, rather than the generic
+        # "want to know more" suggestions everyone else gets.
+        suggestions = list(STUDENT_ACTIVE_RECALL_SUGGESTIONS)
+    else:
+        suggestions = list(SUGGESTION_MAP.get(state.intent, SUGGESTION_MAP["general"]))
 
     state.follow_up_suggestions = suggestions[:3]
 
