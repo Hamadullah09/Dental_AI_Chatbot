@@ -47,6 +47,7 @@ def test_ollama_generation_uses_response_field_and_ignores_thinking(monkeypatch)
             "ollama_num_ctx": 4096,
             "ollama_num_predict": 512,
             "ollama_timeout_seconds": 180,
+            "ollama_max_retry_attempts": 2,
         },
     )()
 
@@ -99,6 +100,7 @@ def test_ollama_prompt_disables_qwen_thinking(monkeypatch):
             "ollama_num_ctx": 4096,
             "ollama_num_predict": 512,
             "ollama_timeout_seconds": 180,
+            "ollama_max_retry_attempts": 2,
         },
     )()
 

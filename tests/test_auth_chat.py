@@ -16,6 +16,14 @@ def test_register_and_login(client):
 
 
 def test_chat_saves_history_and_sources(client, monkeypatch):
+    """Exercises the legacy RAGService fallback path explicitly (by forcing the LangGraph
+    build to fail) rather than mocking app.routers.chat.RAGService and hoping the primary
+    path uses it - it doesn't. The primary /chat path runs the LangGraph agent, whose nodes
+    do `from app.services.rag import RAGService` internally at call time; that resolves
+    fresh from app.services.rag and never sees a patch applied only to
+    app.routers.chat.RAGService. This mismatch was itself a confirmed gap - see
+    docs/GAP_AUDIT_PHASE0.md finding #1/#9 - so this test now forces and asserts the
+    fallback explicitly instead of accidentally not testing anything."""
     auth = register_user(client, "student@example.com", "student")
 
     class FakeRAGService:
@@ -33,7 +41,11 @@ def test_chat_saves_history_and_sources(client, monkeypatch):
                 ],
             )
 
+    def broken_graph():
+        raise RuntimeError("simulated LangGraph build failure")
+
     monkeypatch.setattr("app.routers.chat.RAGService", FakeRAGService)
+    monkeypatch.setattr("app.agent.graph.build_langgraph", broken_graph)
 
     response = client.post(
         "/api/chat",
@@ -61,3 +73,35 @@ def test_chat_saves_history_and_sources(client, monkeypatch):
         json={"message_id": data["message_id"], "rating": 5, "comment": "Useful"},
     )
     assert feedback.status_code == 200
+
+
+def test_agent_graph_fallback_is_logged_and_metered(client, monkeypatch):
+    """Regression test for finding #1: a LangGraph failure must not fail open silently -
+    it must be logged and counted so the fallback rate is observable (see
+    app.routers.chat.chat's AGENT_GRAPH_FALLBACK_TOTAL usage). RAGService is mocked so this
+    exercises only the fallback bookkeeping, not real Qdrant/Ollama network calls."""
+    from app.middleware.metrics import AGENT_GRAPH_FALLBACK_TOTAL
+
+    auth = register_user(client, "fallback-metric@example.com", "patient")
+
+    class FakeRAGService:
+        def answer(self, question, top_k=None, filters=None):
+            return ("A cavity is tooth decay.", [])
+
+    def broken_graph():
+        raise ValueError("simulated failure for metric test")
+
+    monkeypatch.setattr("app.agent.graph.build_langgraph", broken_graph)
+    monkeypatch.setattr("app.routers.chat.RAGService", FakeRAGService)
+
+    before = AGENT_GRAPH_FALLBACK_TOTAL.labels(reason="ValueError")._value.get()
+
+    response = client.post(
+        "/api/chat",
+        headers={"Authorization": f"Bearer {auth['access_token']}"},
+        json={"question": "What is a cavity?"},
+    )
+
+    assert response.status_code == 200, response.text
+    after = AGENT_GRAPH_FALLBACK_TOTAL.labels(reason="ValueError")._value.get()
+    assert after == before + 1

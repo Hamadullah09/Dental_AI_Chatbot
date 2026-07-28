@@ -75,6 +75,7 @@ class DentistExportService:
         dentists = self.repo.list_all(active_only=False)
         if not dentists:
             logger.warning("No dentists to export")
+            path.touch(exist_ok=True)
             return str(path)
 
         headers = list(self._dentist_to_dict(dentists[0]).keys())

@@ -19,67 +19,124 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+def load_memory_context(state: AgentState) -> AgentState:
+    """Loads the user's persistent memory (preferences, recent topics, recent session
+    titles) into state.memory_context so it reaches the prompt via build_context().
+
+    Uses the DB-backed MemoryService - the same implementation the streaming path already
+    relied on - rather than the orphaned Redis-based MemoryManager in
+    app/agent/nodes/memory.py, which was never wired in and used an incompatible parallel
+    preference store (see docs/GAP_AUDIT_PHASE0.md finding #11)."""
+    start = time.perf_counter()
+    settings = get_settings()
+
+    if not settings.enable_memory or not state.user_id:
+        state.add_trace("memory_loader", "skipped", "Memory disabled or no user_id")
+        return state
+
+    try:
+        from app.services.memory import MemoryService
+        mem_svc = MemoryService()
+        memory_text = mem_svc.format_memory_for_prompt(state.user_id)
+        if memory_text:
+            state.memory_context = memory_text
+        mem_svc.track_topic(state.user_id, state.question)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace(
+            "memory_loader",
+            "completed",
+            "Loaded user memory context" if memory_text else "No memory context yet",
+            duration_ms,
+        )
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        state.add_trace("memory_loader", "error", str(exc), duration_ms)
+
+    return state
+
+
+def _run_requested_retrieval_mode(rag, rag_mode: str, query: str, variants: list[str], top_k: int, filters: dict, settings) -> list:
+    from app.services.rag import merge_chunks, rerank_chunks
+
+    if rag_mode == "multi_query" and len(variants) > 1:
+        all_chunks = []
+        seen_keys = set()
+        for variant in variants[:settings.multi_query_max_variants]:
+            variant_chunks = rag.retrieve(variant, top_k=top_k, filters=filters)
+            for chunk in variant_chunks:
+                key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_chunks.append(chunk)
+        merged = merge_chunks(all_chunks)
+        return rerank_chunks(query, merged)
+    elif rag_mode == "corrective" or rag_mode == "self_rag":
+        initial = rag.retrieve(query, top_k=top_k, filters=filters)
+        from app.services.rag import retrieval_confidence
+        if retrieval_confidence(initial) >= settings.corrective_confidence_threshold:
+            return initial
+        all_chunks = list(initial)
+        seen_keys = {
+            (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+            for chunk in initial
+        }
+        for variant in variants[:settings.multi_query_max_variants]:
+            variant_chunks = rag.retrieve(variant, top_k=top_k, filters=filters)
+            for chunk in variant_chunks:
+                key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_chunks.append(chunk)
+        merged = merge_chunks(all_chunks)
+        return rerank_chunks(query, merged)
+    elif rag_mode == "hyde":
+        initial = rag.retrieve(query, top_k=top_k, filters=filters)
+        from app.services.rag import retrieval_confidence
+        if retrieval_confidence(initial) >= settings.hyde_confidence_threshold:
+            return initial
+        hypothetical = rag.generate_hypothetical_passage(query)
+        if hypothetical:
+            hyde_chunks = rag.retrieve(hypothetical, top_k=top_k, filters=filters)
+            all_chunks = initial + hyde_chunks
+            merged = merge_chunks(all_chunks)
+            return rerank_chunks(query, merged)
+        return initial
+    else:
+        return rag.retrieve(query, top_k=top_k, filters=filters)
+
+
 def retrieve_chunks(state: AgentState) -> AgentState:
     start = time.perf_counter()
     settings = get_settings()
 
     try:
-        from app.services.rag import RAGService, merge_chunks, rerank_chunks, RetrievedChunk, SourceCitation
+        from app.core.resilience import CircuitBreakerOpenError
+        from app.services.degradation import DegradationTier, keyword_only_retrieve
+        from app.services.rag import RAGService
+
         rag = RAGService()
         query = state.rewritten_query or state.question
         top_k = state.top_k or settings.retrieval_top_k
         variants = state.query_variants or [query]
-
         rag_mode = settings.rag_mode
 
-        if rag_mode == "multi_query" and len(variants) > 1:
-            all_chunks = []
-            seen_keys = set()
-            for variant in variants[:settings.multi_query_max_variants]:
-                variant_chunks = rag.retrieve(variant, top_k=top_k, filters=state.filters)
-                for chunk in variant_chunks:
-                    key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
-                    if key not in seen_keys:
-                        seen_keys.add(key)
-                        all_chunks.append(chunk)
-            merged = merge_chunks(all_chunks)
-            reranked = rerank_chunks(query, merged)
-        elif rag_mode == "corrective" or rag_mode == "self_rag":
-            initial = rag.retrieve(query, top_k=top_k, filters=state.filters)
-            from app.services.rag import retrieval_confidence
-            if retrieval_confidence(initial) >= settings.corrective_confidence_threshold:
-                reranked = initial
-            else:
-                all_chunks = list(initial)
-                seen_keys = set()
-                for chunk in initial:
-                    key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
-                    seen_keys.add(key)
-                for variant in variants[:settings.multi_query_max_variants]:
-                    variant_chunks = rag.retrieve(variant, top_k=top_k, filters=state.filters)
-                    for chunk in variant_chunks:
-                        key = (chunk.citation.document_id, chunk.citation.page_number, chunk.citation.chunk_index)
-                        if key not in seen_keys:
-                            seen_keys.add(key)
-                            all_chunks.append(chunk)
-                merged = merge_chunks(all_chunks)
-                reranked = rerank_chunks(query, merged)
-        elif rag_mode == "hyde":
-            initial = rag.retrieve(query, top_k=top_k, filters=state.filters)
-            from app.services.rag import retrieval_confidence
-            if retrieval_confidence(initial) >= settings.hyde_confidence_threshold:
-                reranked = initial
-            else:
-                hypothetical = rag.generate_hypothetical_passage(query)
-                if hypothetical:
-                    hyde_chunks = rag.retrieve(hypothetical, top_k=top_k, filters=state.filters)
-                    all_chunks = initial + hyde_chunks
-                    merged = merge_chunks(all_chunks)
-                    reranked = rerank_chunks(query, merged)
-                else:
-                    reranked = initial
-        else:
-            reranked = rag.retrieve(query, top_k=top_k, filters=state.filters)
+        tier = DegradationTier.full_hybrid
+        try:
+            reranked = _run_requested_retrieval_mode(rag, rag_mode, query, variants, top_k, state.filters, settings)
+        except CircuitBreakerOpenError:
+            # Dense search (Qdrant) is presumed down - degrade to pure BM25 over Postgres,
+            # which has no Qdrant dependency at all (Phase 1 graceful degradation tiers).
+            logger.warning("retrieval.degraded_to_keyword_only reason=qdrant_circuit_open")
+            reranked = keyword_only_retrieve(rag, query, top_k, state.filters)
+            tier = DegradationTier.keyword_only
+
+        if tier != DegradationTier.full_hybrid:
+            try:
+                from app.middleware.metrics import RETRIEVAL_DEGRADATION_TOTAL
+                RETRIEVAL_DEGRADATION_TOTAL.labels(tier=tier.value).inc()
+            except Exception:
+                pass
 
         state.retrieved_chunks = [
             {
@@ -98,13 +155,20 @@ def retrieve_chunks(state: AgentState) -> AgentState:
             }
             for chunk in reranked
         ]
+        state.degradation_tier = tier.value
 
         duration_ms = (time.perf_counter() - start) * 1000
-        state.add_trace("hybrid_retriever", "completed", f"{len(reranked)} chunks (mode={rag_mode})", duration_ms)
+        state.add_trace("hybrid_retriever", "completed", f"{len(reranked)} chunks (mode={rag_mode}, tier={tier.value})", duration_ms)
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         state.error = str(exc)
+        state.degradation_tier = "static_degraded"
+        try:
+            from app.middleware.metrics import RETRIEVAL_DEGRADATION_TOTAL
+            RETRIEVAL_DEGRADATION_TOTAL.labels(tier="static_degraded").inc()
+        except Exception:
+            pass
         state.add_trace("hybrid_retriever", "error", str(exc), duration_ms)
 
     return state
@@ -215,6 +279,82 @@ def rerank_results(state: AgentState) -> AgentState:
     return state
 
 
+def run_self_check_and_adjust_answer(state: AgentState) -> None:
+    """Pattern-based grounding/prescribing/safety-note check (Self-RAG heuristic, not an
+    LLM/embedding verifier - see docs/GAP_AUDIT_PHASE0.md finding #5). Shared by both the
+    graph's generate_answer node and the streaming pipeline so the two paths can't drift."""
+    try:
+        from app.services.rag import RAGService
+        rag = RAGService()
+        chunks_for_check = []
+        for chunk_dict in state.reranked_chunks[:5]:
+            from app.schemas import SourceCitation
+            citation_data = chunk_dict.get("citation", {})
+            chunks_for_check.append(type('RetrievedChunk', (), {
+                'text': chunk_dict.get("text", ""),
+                'citation': SourceCitation(
+                    source_type=citation_data.get("source_type", "pdf"),
+                    document_id=citation_data.get("document_id"),
+                    document_name=citation_data.get("document_name", "Unknown"),
+                    page_number=citation_data.get("page_number"),
+                    chunk_index=citation_data.get("chunk_index"),
+                    score=citation_data.get("score"),
+                ),
+                'metadata': {},
+                'vector_score': chunk_dict.get("vector_score", 0),
+                'keyword_score': chunk_dict.get("keyword_score", 0),
+                'rerank_score': chunk_dict.get("rerank_score", 0),
+            })())
+
+        check_result = rag.self_check_answer(state.question, state.answer, chunks_for_check)
+
+        if not check_result.get("passed"):
+            reasons = check_result.get("reasons", [])
+            if "prescribing_language" in reasons:
+                state.answer = (
+                    "I cannot provide specific medication prescriptions or dosages. "
+                    "Please consult a licensed dental professional for prescription advice.\n\n"
+                    + state.answer
+                )
+            if "missing_safety_note" in reasons:
+                state.answer += (
+                    "\n\n**Safety Note:** This is educational information only. "
+                    "For symptoms, diagnosis, or treatment decisions, please consult a licensed dentist."
+                )
+            if "ungrounded" in reasons and state.retrieved_chunks:
+                state.answer_mode = "partially_grounded"
+                state.add_trace("self_check", "flagged", f"Reasons: {reasons}")
+    except Exception:
+        pass
+
+
+def populate_sources_and_visuals(state: AgentState) -> None:
+    for chunk in state.reranked_chunks[:5]:
+        citation = chunk.get("citation", {})
+        state.sources.append({
+            "source_type": citation.get("source_type", "pdf"),
+            "document_id": citation.get("document_id"),
+            "document_name": citation.get("document_name", "Unknown"),
+            "page_number": citation.get("page_number"),
+            "chunk_index": citation.get("chunk_index"),
+            "score": citation.get("score"),
+        })
+
+    for visual in state.reranked_visuals[:2]:
+        state.visuals.append({
+            "visual_id": visual.get("visual_id", ""),
+            "document_id": visual.get("document_id"),
+            "document_name": visual.get("document_name", "Unknown"),
+            "page_number": visual.get("page_number"),
+            "visual_type": visual.get("visual_type", "unknown"),
+            "image_path": visual.get("image_path", ""),
+            "image_url": visual.get("image_url", ""),
+            "caption_text": visual.get("caption_text"),
+            "generated_description": visual.get("generated_description"),
+            "score": visual.get("score"),
+        })
+
+
 def generate_answer(state: AgentState) -> AgentState:
     start = time.perf_counter()
 
@@ -229,74 +369,8 @@ def generate_answer(state: AgentState) -> AgentState:
         state.answer = answer
         state.answer_mode = "rag_grounded" if state.retrieved_chunks else "general_fallback"
 
-        try:
-            from app.services.rag import RAGService, contains_prescribing_language, needs_safety_note
-            rag = RAGService()
-            chunks_for_check = []
-            for chunk_dict in state.reranked_chunks[:5]:
-                from app.schemas import SourceCitation
-                citation_data = chunk_dict.get("citation", {})
-                chunks_for_check.append(type('RetrievedChunk', (), {
-                    'text': chunk_dict.get("text", ""),
-                    'citation': SourceCitation(
-                        source_type=citation_data.get("source_type", "pdf"),
-                        document_id=citation_data.get("document_id"),
-                        document_name=citation_data.get("document_name", "Unknown"),
-                        page_number=citation_data.get("page_number"),
-                        chunk_index=citation_data.get("chunk_index"),
-                        score=citation_data.get("score"),
-                    ),
-                    'metadata': {},
-                    'vector_score': chunk_dict.get("vector_score", 0),
-                    'keyword_score': chunk_dict.get("keyword_score", 0),
-                    'rerank_score': chunk_dict.get("rerank_score", 0),
-                })())
-
-            check_result = rag.self_check_answer(state.question, state.answer, chunks_for_check)
-
-            if not check_result.get("passed"):
-                reasons = check_result.get("reasons", [])
-                if "prescribing_language" in reasons:
-                    state.answer = (
-                        "I cannot provide specific medication prescriptions or dosages. "
-                        "Please consult a licensed dental professional for prescription advice.\n\n"
-                        + state.answer
-                    )
-                if "missing_safety_note" in reasons:
-                    state.answer += (
-                        "\n\n**Safety Note:** This is educational information only. "
-                        "For symptoms, diagnosis, or treatment decisions, please consult a licensed dentist."
-                    )
-                if "ungrounded" in reasons and state.retrieved_chunks:
-                    state.answer_mode = "partially_grounded"
-                    state.add_trace("self_check", "flagged", f"Reasons: {reasons}")
-        except Exception:
-            pass
-
-        for chunk in state.reranked_chunks[:5]:
-            citation = chunk.get("citation", {})
-            state.sources.append({
-                "source_type": citation.get("source_type", "pdf"),
-                "document_id": citation.get("document_id"),
-                "document_name": citation.get("document_name", "Unknown"),
-                "page_number": citation.get("page_number"),
-                "chunk_index": citation.get("chunk_index"),
-                "score": citation.get("score"),
-            })
-
-        for visual in state.reranked_visuals[:2]:
-            state.visuals.append({
-                "visual_id": visual.get("visual_id", ""),
-                "document_id": visual.get("document_id"),
-                "document_name": visual.get("document_name", "Unknown"),
-                "page_number": visual.get("page_number"),
-                "visual_type": visual.get("visual_type", "unknown"),
-                "image_path": visual.get("image_path", ""),
-                "image_url": visual.get("image_url", ""),
-                "caption_text": visual.get("caption_text"),
-                "generated_description": visual.get("generated_description"),
-                "score": visual.get("score"),
-            })
+        run_self_check_and_adjust_answer(state)
+        populate_sources_and_visuals(state)
 
         duration_ms = (time.perf_counter() - start) * 1000
         state.add_trace("llm", "completed", f"Generated {len(answer)} chars", duration_ms)
@@ -426,6 +500,7 @@ def build_langgraph():
     workflow = StateGraph(AgentState)
 
     workflow.add_node("run_safety_check", run_safety_check)
+    workflow.add_node("load_memory_context", load_memory_context)
     workflow.add_node("classify_intent", classify_intent)
     workflow.add_node("generate_direct_answer", generate_direct_answer)
     workflow.add_node("rewrite_query", rewrite_query)
@@ -449,9 +524,11 @@ def build_langgraph():
         lambda state: "blocked" if not state.safety_check_passed and state.answer_mode == "safety_blocked" else "continue",
         {
             "blocked": "format_response",
-            "continue": "classify_intent",
+            "continue": "load_memory_context",
         },
     )
+
+    workflow.add_edge("load_memory_context", "classify_intent")
 
     workflow.add_conditional_edges(
         "classify_intent",

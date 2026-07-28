@@ -51,15 +51,26 @@ def health(db: Session = Depends(get_db)) -> dict[str, Any]:
     checks: dict[str, Any] = {}
 
     checks["database"] = check_database(db)
-    checks["qdrant"] = check_qdrant(settings.qdrant_url, settings.qdrant_timeout_seconds)
+    # Deliberately NOT settings.qdrant_timeout_seconds (120s default) - a health check must
+    # use a short bounded timeout regardless of the operational timeout used for real
+    # queries, or a slow-but-not-instantly-refused Qdrant hangs /health itself for minutes.
+    checks["qdrant"] = check_qdrant(settings.qdrant_url, timeout=3)
     checks["ollama"] = check_ollama_reachable(settings.ollama_base_url)
     checks["redis"] = check_redis()
 
-    all_ok = all(c.get("status") == "ok" for c in checks.values())
+    # "not_configured" is a valid, intentional state (e.g. Qdrant reachable only via a
+    # local embedded path with no HTTP URL to ping) and must not count as degraded -
+    # otherwise a correctly-configured deployment always reports unhealthy.
+    all_ok = all(c.get("status") in ("ok", "not_configured") for c in checks.values())
     return {
         "status": "ok" if all_ok else "degraded",
         "service": settings.app_name,
         "environment": settings.environment,
+        # Flat aliases alongside "checks" for simpler consumers (dashboards, tests) that
+        # don't want to reach into a nested object for the two most-watched dependencies.
+        "backend": "ok" if checks["database"].get("status") == "ok" and checks["redis"].get("status") == "ok" else "degraded",
+        "ollama": checks["ollama"],
+        "qdrant": checks["qdrant"],
         "checks": checks,
         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
     }
@@ -70,10 +81,10 @@ def readiness(db: Session = Depends(get_db)) -> dict[str, Any]:
     settings = get_settings()
     checks = {
         "database": check_database(db),
-        "qdrant": check_qdrant(settings.qdrant_url, settings.qdrant_timeout_seconds),
+        "qdrant": check_qdrant(settings.qdrant_url, timeout=3),
         "redis": check_redis(),
     }
-    ready = all(c.get("status") == "ok" for c in checks.values())
+    ready = all(c.get("status") in ("ok", "not_configured") for c in checks.values())
     return {"status": "ready" if ready else "not_ready", "checks": checks}
 
 

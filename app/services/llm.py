@@ -5,7 +5,9 @@ from pathlib import Path
 import httpx
 from openai import OpenAI, OpenAIError
 
+from app.core.concurrency import get_ollama_gate
 from app.core.config import get_settings
+from app.core.resilience import is_transient_network_error, ollama_breaker, retry_with_backoff
 
 
 THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
@@ -48,6 +50,16 @@ class LLMGenerationError(RuntimeError):
     pass
 
 
+class OllamaBusyError(LLMGenerationError):
+    """Raised when the Ollama concurrency gate could not be acquired within its wait budget
+    (too many concurrent GPU inference requests already in flight)."""
+
+
+class OllamaCircuitOpenError(LLMGenerationError):
+    """Raised when the Ollama circuit breaker is open (dependency presumed down); callers
+    should degrade immediately rather than wait out another timeout."""
+
+
 class LLMService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -86,6 +98,9 @@ class LLMService:
         return clean_llm_response(response.choices[0].message.content or "")
 
     def _generate_ollama(self, prompt: str, *, system_prompt: str, temperature: float, top_p: float | None = None) -> str:
+        from app.core.concurrency import ServiceBusyError
+        from app.core.resilience import CircuitBreakerOpenError
+
         base_url = self.settings.ollama_base_url.rstrip("/")
         payload = {
             "model": self.settings.ollama_model,
@@ -100,26 +115,44 @@ class LLMService:
                 "num_predict": self.settings.ollama_num_predict,
             },
         }
-        try:
-            timeout = httpx.Timeout(
-                timeout=float(self.settings.ollama_timeout_seconds),
-                connect=5.0,
-                read=float(self.settings.ollama_timeout_seconds),
-                write=10.0,
-                pool=5.0,
-            )
+        timeout = httpx.Timeout(
+            timeout=float(self.settings.ollama_timeout_seconds),
+            connect=5.0,
+            read=float(self.settings.ollama_timeout_seconds),
+            write=10.0,
+            pool=5.0,
+        )
+
+        def _post() -> dict:
             with httpx.Client(timeout=timeout) as client:
-                response = client.post(
-                    f"{base_url}/api/generate",
-                    json=payload,
-                )
+                response = client.post(f"{base_url}/api/generate", json=payload)
                 response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPError as exc:
-            raise LLMGenerationError(
-                f"Ollama is not reachable at {self.settings.ollama_base_url} "
-                f"or model '{self.settings.ollama_model}' is not available. {exc}"
-            ) from exc
+                return response.json()
+
+        gate = get_ollama_gate()
+        try:
+            with gate.acquire():
+                try:
+                    data = ollama_breaker.call(
+                        lambda: retry_with_backoff(
+                            _post,
+                            max_attempts=self.settings.ollama_max_retry_attempts,
+                            should_retry=is_transient_network_error,
+                            name="ollama.generate",
+                        )
+                    )
+                except CircuitBreakerOpenError as exc:
+                    raise OllamaCircuitOpenError(
+                        f"Ollama is currently unavailable (circuit breaker open): {exc}"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise LLMGenerationError(
+                        f"Ollama is not reachable at {self.settings.ollama_base_url} "
+                        f"or model '{self.settings.ollama_model}' is not available. {exc}"
+                    ) from exc
+        except ServiceBusyError as exc:
+            raise OllamaBusyError(str(exc)) from exc
+
         answer = data.get("response", "").strip()
         return clean_llm_response(answer)
 
@@ -132,6 +165,9 @@ class LLMService:
 
     def _generate_ollama_stream(self, prompt: str, *, system_prompt: str, temperature: float, top_p: float | None = None):
         import json as _json
+
+        from app.core.concurrency import ServiceBusyError
+
         base_url = self.settings.ollama_base_url.rstrip("/")
         payload = {
             "model": self.settings.ollama_model,
@@ -146,34 +182,129 @@ class LLMService:
                 "num_predict": self.settings.ollama_num_predict,
             },
         }
+        timeout = httpx.Timeout(
+            timeout=float(self.settings.ollama_timeout_seconds),
+            connect=5.0,
+            read=float(self.settings.ollama_timeout_seconds),
+            write=10.0,
+            pool=5.0,
+        )
+
+        # Token streams can't be safely retried once output has started reaching the user,
+        # so we do a circuit-breaker preflight (fail fast if Ollama is presumed down) and a
+        # single connection attempt, rather than blind retry-with-backoff as in the
+        # non-streaming path.
+        if not ollama_breaker.allow_request():
+            raise OllamaCircuitOpenError("Ollama is currently unavailable (circuit breaker open).")
+
+        gate = get_ollama_gate()
         try:
-            timeout = httpx.Timeout(
-                timeout=float(self.settings.ollama_timeout_seconds),
-                connect=5.0,
-                read=float(self.settings.ollama_timeout_seconds),
-                write=10.0,
-                pool=5.0,
-            )
-            with httpx.Client(timeout=timeout) as client:
-                with client.stream("POST", f"{base_url}/api/generate", json=payload) as response:
-                    response.raise_for_status()
-                    for line in response.iter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk = _json.loads(line)
-                            token = chunk.get("response", "")
-                            if token:
-                                yield token
-                            if chunk.get("done"):
-                                break
-                        except _json.JSONDecodeError:
-                            continue
-        except httpx.HTTPError as exc:
-            raise LLMGenerationError(
-                f"Ollama is not reachable at {self.settings.ollama_base_url} "
-                f"or model '{self.settings.ollama_model}' is not available. {exc}"
-            ) from exc
+            with gate.acquire():
+                got_any_token = False
+                try:
+                    with httpx.Client(timeout=timeout) as client, client.stream("POST", f"{base_url}/api/generate", json=payload) as response:
+                        response.raise_for_status()
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = _json.loads(line)
+                                token = chunk.get("response", "")
+                                if token:
+                                    got_any_token = True
+                                    yield token
+                                if chunk.get("done"):
+                                    break
+                            except _json.JSONDecodeError:
+                                continue
+                except httpx.HTTPError as exc:
+                    ollama_breaker.record_failure()
+                    raise LLMGenerationError(
+                        f"Ollama is not reachable at {self.settings.ollama_base_url} "
+                        f"or model '{self.settings.ollama_model}' is not available. {exc}"
+                    ) from exc
+                except GeneratorExit:
+                    if got_any_token:
+                        ollama_breaker.record_success()
+                    raise
+                else:
+                    ollama_breaker.record_success()
+        except ServiceBusyError as exc:
+            raise OllamaBusyError(str(exc)) from exc
+
+    async def agenerate_stream(self, prompt: str, *, system_prompt: str, temperature: float = 0.2, top_p: float | None = None):
+        """True async token stream for Ollama (httpx.AsyncClient), so a single streaming
+        chat turn no longer blocks the event loop for the whole worker process while it's
+        in flight - see docs/GAP_AUDIT_PHASE0.md finding #10 addendum. Falls back to a
+        single-shot yield for non-Ollama providers, matching generate_stream()'s behavior."""
+        if self.provider != "ollama":
+            answer = self.generate(prompt, system_prompt=system_prompt, temperature=temperature, top_p=top_p)
+            yield answer
+            return
+
+        import json as _json
+
+        from app.core.concurrency import ServiceBusyError
+
+        base_url = self.settings.ollama_base_url.rstrip("/")
+        payload = {
+            "model": self.settings.ollama_model,
+            "prompt": f"/no_think\n\n{system_prompt}\n\n{prompt}",
+            "stream": True,
+            "think": False,
+            "keep_alive": getattr(self.settings, "ollama_keep_alive", "0s"),
+            "options": {
+                "temperature": temperature,
+                "top_p": self.settings.ollama_top_p if top_p is None else top_p,
+                "num_ctx": self.settings.ollama_num_ctx,
+                "num_predict": self.settings.ollama_num_predict,
+            },
+        }
+        timeout = httpx.Timeout(
+            timeout=float(self.settings.ollama_timeout_seconds),
+            connect=5.0,
+            read=float(self.settings.ollama_timeout_seconds),
+            write=10.0,
+            pool=5.0,
+        )
+
+        if not ollama_breaker.allow_request():
+            raise OllamaCircuitOpenError("Ollama is currently unavailable (circuit breaker open).")
+
+        gate = get_ollama_gate()
+        try:
+            async with gate.acquire_async():
+                got_any_token = False
+                try:
+                    async with httpx.AsyncClient(timeout=timeout) as client, client.stream("POST", f"{base_url}/api/generate", json=payload) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = _json.loads(line)
+                                token = chunk.get("response", "")
+                                if token:
+                                    got_any_token = True
+                                    yield token
+                                if chunk.get("done"):
+                                    break
+                            except _json.JSONDecodeError:
+                                continue
+                except httpx.HTTPError as exc:
+                    ollama_breaker.record_failure()
+                    raise LLMGenerationError(
+                        f"Ollama is not reachable at {self.settings.ollama_base_url} "
+                        f"or model '{self.settings.ollama_model}' is not available. {exc}"
+                    ) from exc
+                except GeneratorExit:
+                    if got_any_token:
+                        ollama_breaker.record_success()
+                    raise
+                else:
+                    ollama_breaker.record_success()
+        except ServiceBusyError as exc:
+            raise OllamaBusyError(str(exc)) from exc
 
     def analyze_image(
         self,
@@ -203,23 +334,46 @@ class LLMService:
                 "num_predict": min(self.settings.ollama_num_predict, 256),
             },
         }
-        try:
-            timeout = httpx.Timeout(
-                timeout=float(getattr(self.settings, "ollama_vision_timeout_seconds", 90)),
-                connect=5.0,
-                read=float(getattr(self.settings, "ollama_vision_timeout_seconds", 90)),
-                write=20.0,
-                pool=5.0,
-            )
+        from app.core.concurrency import ServiceBusyError
+        from app.core.resilience import CircuitBreakerOpenError
+
+        timeout = httpx.Timeout(
+            timeout=float(getattr(self.settings, "ollama_vision_timeout_seconds", 90)),
+            connect=5.0,
+            read=float(getattr(self.settings, "ollama_vision_timeout_seconds", 90)),
+            write=20.0,
+            pool=5.0,
+        )
+
+        def _post() -> dict:
             with httpx.Client(timeout=timeout) as client:
                 response = client.post(f"{base_url}/api/chat", json=payload)
                 response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPError as exc:
-            raise LLMGenerationError(
-                f"Ollama vision model is not reachable at {self.settings.ollama_base_url} "
-                f"or model '{self.settings.ollama_vision_model}' is not available. {exc}"
-            ) from exc
+                return response.json()
+
+        gate = get_ollama_gate()
+        try:
+            with gate.acquire():
+                try:
+                    data = ollama_breaker.call(
+                        lambda: retry_with_backoff(
+                            _post,
+                            max_attempts=self.settings.ollama_max_retry_attempts,
+                            should_retry=is_transient_network_error,
+                            name="ollama.vision",
+                        )
+                    )
+                except CircuitBreakerOpenError as exc:
+                    raise OllamaCircuitOpenError(
+                        f"Ollama vision is currently unavailable (circuit breaker open): {exc}"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise LLMGenerationError(
+                        f"Ollama vision model is not reachable at {self.settings.ollama_base_url} "
+                        f"or model '{self.settings.ollama_vision_model}' is not available. {exc}"
+                    ) from exc
+        except ServiceBusyError as exc:
+            raise OllamaBusyError(str(exc)) from exc
         message = data.get("message") or {}
         content = message.get("content") if isinstance(message, dict) else ""
         return clean_llm_response(str(content or ""))

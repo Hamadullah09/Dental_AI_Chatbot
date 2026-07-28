@@ -297,6 +297,7 @@ def test_answer_returns_general_fallback_mode_without_sources(monkeypatch):
             "enable_memory": False,
             "enable_hyde": False,
             "enable_self_check": False,
+            "enable_multimodal_rag": False,
             "retrieval_top_k": 5,
             "retrieval_min_relevance_score": 1.1,
         },
@@ -328,7 +329,14 @@ def test_general_fallback_returns_patient_facing_answer_without_context_prefix()
 
     answer = service.generate_general_fallback_answer("Explain dental caries in detail.")
 
-    assert answer.startswith("Direct Answer:")
+    # ensure_language_style()/polish_chat_answer() deliberately strips the raw
+    # "Direct Answer:"/"Explanation:"/"Safety Note:" labels and reflows them into markdown
+    # headings for patient-facing display - this test previously asserted the pre-polish
+    # label was still present, which no longer holds now that polishing always runs.
+    assert not answer.startswith("Direct Answer:")
+    assert "Direct Answer:" not in answer
+    assert "Dental caries is tooth decay" in answer
+    assert "Bacteria use sugar to make acid" in answer
     assert "I could not find enough relevant evidence" not in answer
     assert "uploaded documents" not in answer.lower()
 

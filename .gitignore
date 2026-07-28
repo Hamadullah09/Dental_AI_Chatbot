@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 dental_ai.db
+test_dental_ai.db
 *.sqlite
 *.sqlite3
 backend.log

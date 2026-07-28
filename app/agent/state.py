@@ -56,6 +56,8 @@ class AgentState:
     retry_count: int = 0
     max_retries: int = 2
 
+    degradation_tier: str = "full_hybrid"
+
     trace_log: list[dict[str, Any]] = field(default_factory=list)
 
     def add_trace(self, node: str, status: str, detail: str = "", duration_ms: float = 0) -> None:

@@ -19,6 +19,36 @@ from app.models import User, UserRole  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def fake_redis(monkeypatch):
+    """Redis-dependent features (idempotency keys, rate limiting, degraded-answer cache)
+    fail open when Redis is unreachable, which is safe for prod but means tests would
+    silently verify nothing about their actual caching behavior in an environment with no
+    live Redis. fakeredis gives them a real, in-memory Redis to exercise instead - reset
+    per test so state never leaks across test cases."""
+    import fakeredis
+
+    from app.core import redis as redis_module
+
+    fake_client = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(redis_module, "get_redis", lambda: fake_client)
+    yield fake_client
+    fake_client.flushall()
+
+
+@pytest.fixture(autouse=True)
+def reset_circuit_breakers():
+    from app.core.resilience import embedding_breaker, ollama_breaker, qdrant_breaker
+
+    ollama_breaker.reset()
+    qdrant_breaker.reset()
+    embedding_breaker.reset()
+    yield
+    ollama_breaker.reset()
+    qdrant_breaker.reset()
+    embedding_breaker.reset()
+
+
+@pytest.fixture(autouse=True)
 def clean_database():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)

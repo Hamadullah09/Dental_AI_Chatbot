@@ -70,6 +70,88 @@ USER_SESSIONS = Counter(
     "Total user sessions",
 )
 
+# --- Reliability (Phase 1) ---
+
+AGENT_GRAPH_FALLBACK_TOTAL = Counter(
+    "agent_graph_fallback_total",
+    "Times the LangGraph agent path failed and the request fell back to the legacy RAGService path",
+    ["reason"],
+)
+
+CIRCUIT_BREAKER_STATE = Gauge(
+    "circuit_breaker_state",
+    "Circuit breaker state per dependency (0=closed, 1=half_open, 2=open)",
+    ["name"],
+)
+
+CIRCUIT_BREAKER_REJECTIONS = Counter(
+    "circuit_breaker_rejections_total",
+    "Requests rejected because a circuit breaker was open (fast-failed instead of calling the dependency)",
+    ["name"],
+)
+
+GATE_QUEUE_DEPTH = Gauge(
+    "concurrency_gate_queue_depth",
+    "Number of requests currently waiting to acquire a bounded resource (e.g. Ollama GPU slot)",
+    ["name"],
+)
+
+GATE_ACTIVE = Gauge(
+    "concurrency_gate_active",
+    "Number of requests currently holding a bounded resource slot",
+    ["name"],
+)
+
+GATE_WAIT_DURATION = Histogram(
+    "concurrency_gate_wait_duration_seconds",
+    "Time spent waiting to acquire a bounded resource slot",
+    ["name"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0],
+)
+
+SERVICE_BUSY_TOTAL = Counter(
+    "service_busy_total",
+    "Requests rejected because a concurrency gate's wait budget was exhausted",
+    ["name"],
+)
+
+RETRIEVAL_DEGRADATION_TOTAL = Counter(
+    "retrieval_degradation_total",
+    "Retrieval tier actually served, when the requested tier was unavailable",
+    ["tier"],
+)
+
+UPLOAD_IDEMPOTENT_REPLAY_TOTAL = Counter(
+    "upload_idempotent_replay_total",
+    "Upload requests short-circuited because an Idempotency-Key was already seen",
+)
+
+# --- Observability / quality (Phase 3, Phase 5) ---
+
+CITATION_VERIFICATION_TOTAL = Counter(
+    "citation_verification_total",
+    "Citation verifier outcomes per answer",
+    ["result"],
+)
+
+RETRIEVAL_HIT_TOTAL = Counter(
+    "retrieval_hit_total",
+    "Whether a retrieval call returned at least one chunk above the relevance floor",
+    ["hit"],
+)
+
+TOKEN_USAGE_TOTAL = Counter(
+    "token_usage_estimated_total",
+    "Estimated token usage per turn (approximate: chars/4), by role and direction",
+    ["user_role", "direction"],
+)
+
+PERSONA_RESPONSE_TOTAL = Counter(
+    "persona_response_total",
+    "Chat responses served, labeled by the persona/role path that shaped them",
+    ["user_role", "pipeline"],
+)
+
 
 class PrometheusMiddleware:
     def __init__(self, app: Any) -> None:

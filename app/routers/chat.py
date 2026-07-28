@@ -1,22 +1,40 @@
 import json
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.core.logging import get_logger, user_id_var
-from app.core.redis import RateLimiter
+from app.core.redis import RateLimiter, RedisCache
 from app.core.streaming import stream_chat_response
 from app.deps import get_current_user
 from app.models import ChatSession, Document, DocumentStatus, DocumentType, Feedback, Message, MessageRole, ReviewStatus, TrustLevel, User
 from app.schemas import ChatRequest, ChatResponse, ChatSessionRead, DocumentRead, FeedbackCreate, FeedbackRead, MessageRead
+from app.services.degradation import cache_successful_answer, get_cached_answer
 from app.services.documents import save_upload
 from app.services.ingestion import IngestionService
+from app.services.llm import OllamaBusyError, OllamaCircuitOpenError
 from app.services.rag import RAGService
-from app.middleware.metrics import CHAT_QUERIES, LLM_LATENCY, RETRIEVAL_LATENCY
+from app.middleware.metrics import (
+    AGENT_GRAPH_FALLBACK_TOTAL,
+    CHAT_QUERIES,
+    LLM_LATENCY,
+    PERSONA_RESPONSE_TOTAL,
+    RETRIEVAL_DEGRADATION_TOTAL,
+    RETRIEVAL_LATENCY,
+    UPLOAD_IDEMPOTENT_REPLAY_TOTAL,
+)
 import time
+
+
+def _idempotency_cache() -> RedisCache:
+    return RedisCache(prefix="idempotency:upload")
+
+
+def _idempotency_scope(user_id: str, key: str) -> str:
+    return f"{user_id}:{key}"
 
 
 logger = get_logger(__name__)
@@ -120,6 +138,17 @@ def chat(
     db.add(Message(session_id=session.id, role=MessageRole.user, content=question))
     db.commit()
 
+    filters_payload = {
+        "document_types": [item.value for item in payload.document_types] if payload.document_types else None,
+        "trust_levels": [item.value for item in payload.trust_levels] if payload.trust_levels else None,
+        "review_status": payload.review_status.value if payload.review_status else None,
+        "min_year": payload.min_year,
+        "user_role": current_user.role.value,
+        "document_id": document.id if document else None,
+        "search_web": payload.search_web,
+        "conversation_history": conversation_history,
+    }
+
     retrieval_start = time.perf_counter()
     try:
         from app.agent.graph import build_langgraph
@@ -133,16 +162,7 @@ def chat(
             document_id=document.id if document else None,
             search_web=payload.search_web,
             top_k=payload.top_k,
-            filters={
-                "document_types": [item.value for item in payload.document_types] if payload.document_types else None,
-                "trust_levels": [item.value for item in payload.trust_levels] if payload.trust_levels else None,
-                "review_status": payload.review_status.value if payload.review_status else None,
-                "min_year": payload.min_year,
-                "user_role": current_user.role.value,
-                "document_id": document.id if document else None,
-                "search_web": payload.search_web,
-                "conversation_history": conversation_history,
-            },
+            filters=filters_payload,
             conversation_history=conversation_history,
         )
 
@@ -160,43 +180,89 @@ def chat(
             visuals = result.get("visuals", [])
             answer_mode = result.get("answer_mode", "rag_grounded")
         else:
+            logger.error(
+                "agent_graph.unexpected_return_type",
+                extra={"extra_data": {"user_id": current_user.id, "result_type": type(result).__name__}},
+            )
+            AGENT_GRAPH_FALLBACK_TOTAL.labels(reason="unexpected_return_type").inc()
             rag = RAGService()
-            rag_result = rag.answer(question, top_k=payload.top_k, filters={})
-            answer, sources = rag_result
-            answer_mode = "rag_grounded" if sources else "general_fallback"
-            visuals = []
+            rag_result = rag.answer(question, top_k=payload.top_k, filters=filters_payload)
+            if hasattr(rag_result, "answer"):
+                answer, sources, answer_mode, visuals = (
+                    rag_result.answer,
+                    rag_result.sources,
+                    rag_result.answer_mode,
+                    rag_result.visuals or [],
+                )
+            else:
+                answer, sources = rag_result
+                answer_mode = "rag_grounded" if sources else "general_fallback"
+                visuals = []
 
-    except Exception:
-        rag = RAGService()
-        rag_result = rag.answer(
-            question,
-            top_k=payload.top_k,
-            filters={
-                "document_types": [item.value for item in payload.document_types] if payload.document_types else None,
-                "trust_levels": [item.value for item in payload.trust_levels] if payload.trust_levels else None,
-                "review_status": payload.review_status.value if payload.review_status else None,
-                "min_year": payload.min_year,
-                "user_role": current_user.role.value,
-                "document_id": document.id if document else None,
-                "search_web": payload.search_web,
-                "conversation_history": conversation_history,
-            },
+    except (OllamaBusyError, OllamaCircuitOpenError) as exc:
+        # The dependency is known to be saturated/down right now. Falling back to
+        # RAGService would just hit the same Ollama instance and fail again, burning the
+        # user's wait time twice - fail fast instead with a distinct, actionable status.
+        reason = "ollama_busy" if isinstance(exc, OllamaBusyError) else "ollama_circuit_open"
+        logger.warning(
+            f"agent_graph.fallback_skipped reason={reason}",
+            extra={"extra_data": {"user_id": current_user.id, "reason": reason}},
         )
-        if hasattr(rag_result, "answer"):
-            answer = rag_result.answer
-            sources = rag_result.sources
-            answer_mode = rag_result.answer_mode
-            visuals = rag_result.visuals or []
+        AGENT_GRAPH_FALLBACK_TOTAL.labels(reason=reason).inc()
+        cached = get_cached_answer(question)
+        if cached:
+            RETRIEVAL_DEGRADATION_TOTAL.labels(tier="cached_answer").inc()
+            answer, sources, visuals, answer_mode = (
+                cached["answer"], cached["sources"], cached["visuals"], "cached_degraded",
+            )
         else:
-            answer, sources = rag_result
-            answer_mode = "rag_grounded" if sources else "general_fallback"
-            visuals = []
+            raise HTTPException(
+                status_code=503,
+                detail="The dental AI model is at capacity right now. Please try again in a moment.",
+            )
+    except Exception as exc:
+        logger.error(
+            f"agent_graph.failed_silently_would_have_fallen_back reason={exc.__class__.__name__}",
+            exc_info=True,
+            extra={"extra_data": {"user_id": current_user.id, "reason": exc.__class__.__name__}},
+        )
+        AGENT_GRAPH_FALLBACK_TOTAL.labels(reason=exc.__class__.__name__).inc()
+        try:
+            rag = RAGService()
+            rag_result = rag.answer(question, top_k=payload.top_k, filters=filters_payload)
+            if hasattr(rag_result, "answer"):
+                answer, sources, answer_mode, visuals = (
+                    rag_result.answer,
+                    rag_result.sources,
+                    rag_result.answer_mode,
+                    rag_result.visuals or [],
+                )
+            else:
+                answer, sources = rag_result
+                answer_mode = "rag_grounded" if sources else "general_fallback"
+                visuals = []
+        except (OllamaBusyError, OllamaCircuitOpenError):
+            AGENT_GRAPH_FALLBACK_TOTAL.labels(reason="fallback_also_busy").inc()
+            cached = get_cached_answer(question)
+            if cached:
+                RETRIEVAL_DEGRADATION_TOTAL.labels(tier="cached_answer").inc()
+                answer, sources, visuals, answer_mode = (
+                    cached["answer"], cached["sources"], cached["visuals"], "cached_degraded",
+                )
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail="The dental AI model is at capacity right now. Please try again in a moment.",
+                )
 
     retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
     RETRIEVAL_LATENCY.labels(mode=answer_mode).observe(retrieval_duration / 1000)
 
     if answer_mode == "service_unavailable":
         raise HTTPException(status_code=503, detail="The dental AI model did not respond in time. Please try again.")
+
+    if answer_mode == "rag_grounded" and sources:
+        cache_successful_answer(question, answer, sources, visuals)
 
     assistant_message = Message(
         session_id=session.id,
@@ -210,6 +276,7 @@ def chat(
 
     total_duration = (time.perf_counter() - start) * 1000
     CHAT_QUERIES.labels(answer_mode=answer_mode).inc()
+    PERSONA_RESPONSE_TOTAL.labels(user_role=current_user.role.value, pipeline="graph").inc()
     logger.info(
         f"Chat completed: {total_duration:.0f}ms, mode={answer_mode}, sources={len(sources)}",
         extra={"extra_data": {"user_id": current_user.id, "duration_ms": total_duration, "answer_mode": answer_mode}},
@@ -317,9 +384,17 @@ async def chat_stream(
                         final_sources = event.get("sources", [])
                         final_visuals = event.get("visuals", [])
                     elif event.get("type") == "metadata":
-                        final_mode = event.get("answer_mode", "rag_grounded")
+                        final_mode = event.get("answer_mode", final_mode)
+                    elif event.get("type") == "metadata_extended" and event.get("answer_mode"):
+                        # Authoritative mode, known only after generation + citation
+                        # verification complete - overrides the provisional guess above
+                        # (see docs/GAP_AUDIT_PHASE0.md finding #18/#10).
+                        final_mode = event["answer_mode"]
                 except json.JSONDecodeError:
                     pass
+
+        CHAT_QUERIES.labels(answer_mode=final_mode).inc()
+        PERSONA_RESPONSE_TOTAL.labels(user_role=current_user.role.value, pipeline="streaming").inc()
 
         if full_answer:
             with SessionLocal() as save_db:
@@ -349,7 +424,20 @@ def upload_chat_document(
     book_title: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> Document:
+    if idempotency_key:
+        cached_document_id = _idempotency_cache().get(_idempotency_scope(current_user.id, idempotency_key))
+        if cached_document_id:
+            existing = db.get(Document, cached_document_id)
+            if existing and existing.uploaded_by == current_user.id:
+                UPLOAD_IDEMPOTENT_REPLAY_TOTAL.inc()
+                logger.info(
+                    "upload.idempotent_replay",
+                    extra={"extra_data": {"user_id": current_user.id, "document_id": existing.id}},
+                )
+                return existing
+
     try:
         document = save_upload(
             db,
@@ -363,6 +451,12 @@ def upload_chat_document(
         document.status = DocumentStatus.processing
         document.ingestion_progress = 0
         document.ingestion_step = "Queued"
+        if idempotency_key:
+            _idempotency_cache().set(
+                _idempotency_scope(current_user.id, idempotency_key),
+                document.id,
+                ttl=get_settings().upload_idempotency_ttl_seconds,
+            )
         db.commit()
         db.refresh(document)
         background_tasks.add_task(ingest_user_document_background, document.id)

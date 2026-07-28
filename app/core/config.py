@@ -119,6 +119,21 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen3:14b"
     ollama_vision_model: str = "qwen2.5vl:7b"
 
+    # Reliability: circuit breakers, retries, and the GPU concurrency gate (Phase 1).
+    ollama_max_concurrent_requests: int = 2
+    ollama_queue_max_wait_seconds: float = 20.0
+    ollama_max_retry_attempts: int = 2
+    ollama_breaker_failure_threshold: int = 3
+    ollama_breaker_reset_seconds: float = 30.0
+    qdrant_max_retry_attempts: int = 3
+    qdrant_breaker_failure_threshold: int = 5
+    qdrant_breaker_reset_seconds: float = 20.0
+    embedding_breaker_failure_threshold: int = 5
+    embedding_breaker_reset_seconds: float = 15.0
+    upload_idempotency_ttl_seconds: int = 86400
+    degraded_answer_cache_ttl_seconds: int = 21600
+    agent_graph_fallback_alert_rate_threshold: float = 0.02
+
     upload_dir: Path = Path("uploaded_docs")
     extracted_visuals_dir: Path = Path("uploads/extracted_visuals")
     max_upload_mb: int = 200
