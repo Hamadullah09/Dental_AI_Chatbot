@@ -143,7 +143,7 @@ export async function* sendChatStream(input: {
   session_id?: string | null;
   document_id?: string | null;
   search_web?: boolean;
-}, token: string): AsyncGenerator<{type: string; [key: string]: any}, void> {
+}, token: string, signal?: AbortSignal): AsyncGenerator<{type: string; [key: string]: any}, void> {
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${token}`);
   headers.set("Content-Type", "application/json");
@@ -152,6 +152,7 @@ export async function* sendChatStream(input: {
     method: "POST",
     headers,
     body: JSON.stringify(input),
+    signal,
   });
 
   if (!response.ok) {

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
-import { BookOpen, Copy, Download, FileImage, FileText, Globe2, MoreHorizontal, RotateCcw, Share2, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { BookOpen, Copy, Download, FileImage, FileText, Globe2, MoreHorizontal, Pencil, RotateCcw, Share2, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { sendFeedback } from "@/lib/api";
 import { SafeMarkdown } from "./SafeMarkdown";
@@ -12,10 +12,10 @@ interface MessageBubbleProps {
   message: Message;
   onStatus?: (status: string) => void;
   onRetry?: () => void;
-  onFollowUpClick?: (question: string) => void;
+  onEditMessage?: (content: string) => void;
 }
 
-export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: MessageBubbleProps) {
+export function MessageBubble({ message, onStatus, onRetry, onEditMessage }: MessageBubbleProps) {
   const { token } = useAuth();
   const [feedbackGiven, setFeedbackGiven] = useState<"helpful" | "needs-work" | null>(null);
   const [showSources, setShowSources] = useState(false);
@@ -39,6 +39,10 @@ export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: M
     await navigator.clipboard?.writeText(message.content || "");
     onStatus?.("Copied response.");
     setTimeout(() => onStatus?.(""), 2000);
+  }
+
+  function handleEdit() {
+    onEditMessage?.(message.content);
   }
 
   async function handleShare() {
@@ -153,12 +157,24 @@ export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: M
             </div>
           )}
 
-          {/* Timestamp and Feedback bar */}
+          {/* Timestamp and Actions bar */}
           {(!isAssistant || hasRenderableContent) && (
           <div className={`flex w-full items-center gap-2 px-1 ${isAssistant ? "justify-between" : "justify-end"}`}>
             <span className="text-[11px] text-dental-textSecondary">
             {message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
+            {!isAssistant && (
+              <div className="flex items-center gap-1">
+                {onEditMessage && (
+                  <button type="button" onClick={handleEdit} className="rounded-lg p-1.5 text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary" title="Edit">
+                    <Pencil size={14} />
+                  </button>
+                )}
+                <button type="button" onClick={handleCopy} className="rounded-lg p-1.5 text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary" title="Copy">
+                  <Copy size={14} />
+                </button>
+              </div>
+            )}
           </div>
           )}
 
@@ -185,9 +201,6 @@ export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: M
               >
                 <ThumbsDown size={17} />
               </button>
-              <button type="button" onClick={handleShare} className="rounded-lg p-1.5 text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary" title="Share">
-                <Share2 size={17} />
-              </button>
               <button type="button" onClick={handleRetry} className="rounded-lg p-1.5 text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary" title="Try again">
                 <RotateCcw size={17} />
               </button>
@@ -213,6 +226,10 @@ export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: M
                   <button type="button" onClick={handleReadAloud} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
                     <Volume2 className="h-4 w-4 text-dental-textSecondary" />
                     Read aloud
+                  </button>
+                  <button type="button" onClick={handleShare} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
+                    <Share2 className="h-4 w-4 text-dental-textSecondary" />
+                    Share
                   </button>
                   <button type="button" onClick={handleRetry} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-dental-textPrimary hover:bg-dental-border">
                     <RotateCcw className="h-4 w-4 text-dental-textSecondary" />
@@ -262,56 +279,6 @@ export function MessageBubble({ message, onStatus, onRetry, onFollowUpClick }: M
             </div>
           )}
 
-          {isAssistant && message.confidence_level && (
-            <div className="mx-1 mt-2 flex flex-wrap items-center gap-2">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold ${
-                message.confidence_level === "high"
-                  ? "bg-emerald-500/10 text-emerald-400"
-                  : message.confidence_level === "medium"
-                  ? "bg-amber-500/10 text-amber-400"
-                  : "bg-red-500/10 text-red-400"
-              }`}>
-                {message.confidence_level === "high" ? "High Confidence" : message.confidence_level === "medium" ? "Medium Confidence" : "Low Confidence"}
-              </span>
-              {message.confidence_score !== undefined && (
-                <span className="text-[10px] text-dental-textSecondary">
-                  Score: {(message.confidence_score * 100).toFixed(0)}%
-                </span>
-              )}
-            </div>
-          )}
-
-          {isAssistant && message.explainability_notes && message.explainability_notes.length > 0 && (
-            <div className="mx-1 mt-1">
-              <div className="flex flex-wrap gap-1">
-                {message.explainability_notes.map((note, i) => (
-                  <span key={i} className="rounded-full bg-dental-accentSoft px-2 py-0.5 text-[10px] text-dental-accent">
-                    {note}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isAssistant && message.follow_up_suggestions && message.follow_up_suggestions.length > 0 && (
-            <div className="mx-1 mt-3 rounded-2xl border border-dental-border bg-dental-card p-3">
-              <p className="mb-2 text-[11px] font-semibold text-dental-textSecondary">
-                Suggested next questions:
-              </p>
-              <div className="flex flex-col gap-1">
-                {message.follow_up_suggestions.map((suggestion, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => onFollowUpClick?.(suggestion)}
-                    className="rounded-xl px-3 py-2 text-left text-[12px] text-dental-accent hover:bg-dental-accent/10 transition-colors"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </article>

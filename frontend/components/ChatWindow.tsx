@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Download } from "lucide-react";
 import type { Message } from "@/lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { useChatbotConfig } from "@/lib/chatbot-config";
@@ -13,8 +12,8 @@ interface ChatWindowProps {
   onQuickAction: (actionText: string) => void;
   onStatus: (status: string) => void;
   onRetryMessage: (question: string) => void;
-  onFollowUpClick?: (question: string) => void;
-  onExportChat?: () => void;
+  onStop?: () => void;
+  onEditMessage?: (messageId: string, content: string) => void;
   chatWindowRef: React.RefObject<HTMLDivElement>;
   bottomRef: React.RefObject<HTMLDivElement>;
 }
@@ -26,8 +25,8 @@ export function ChatWindow({
   onStatus,
   onQuickAction,
   onRetryMessage,
-  onFollowUpClick,
-  onExportChat,
+  onStop,
+  onEditMessage,
   chatWindowRef,
   bottomRef,
 }: ChatWindowProps) {
@@ -75,19 +74,6 @@ export function ChatWindow({
         ) : (
           /* Active Chat Conversation View */
           <div className="flex w-full flex-col gap-1 pb-28">
-            <div className="flex items-center justify-between px-1 mb-2">
-              <span className="text-[11px] text-dental-textSecondary">{messages.length > 1 ? `${Math.ceil(messages.length / 2)} exchange(s)` : ""}</span>
-              {messages.length > 0 && onExportChat && (
-                <button
-                  type="button"
-                  onClick={onExportChat}
-                  className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-dental-textSecondary hover:bg-dental-card hover:text-dental-textPrimary transition-colors"
-                >
-                  <Download size={13} />
-                  Export Chat
-                </button>
-              )}
-            </div>
             {messages.map((message, index) => (
               (message.role === "assistant" && !message.content.trim() && (!message.sources || message.sources.length === 0) && (!message.visuals || message.visuals.length === 0)) ? null : (
               <MessageBubble 
@@ -98,14 +84,14 @@ export function ChatWindow({
                   const question = previousUserQuestion(index);
                   if (question) onRetryMessage(question);
                 } : undefined}
-                onFollowUpClick={onFollowUpClick}
+                onEditMessage={message.role === "user" ? (content: string) => onEditMessage?.(message.id, content) : undefined}
               />
               )
             ))}
 
-            {/* Typing Indicator */}
+            {/* Typing Indicator + Stop Button */}
             {isLoading && (
-              <div id="typingIndicator" className="flex w-full justify-start px-1 py-5 fade-in">
+              <div id="typingIndicator" className="flex w-full items-center gap-3 px-1 py-5 fade-in">
                 <div className="flex items-center gap-3 rounded-2xl border border-dental-border bg-dental-card px-4 py-3 shadow-sm">
                   <div className="flex gap-1">
                     <div className="typing-dot h-2 w-2 rounded-full bg-dental-accent"></div>
@@ -114,6 +100,16 @@ export function ChatWindow({
                   </div>
                   <span className="text-xs text-dental-textSecondary">{thinkingMessage || config.typing_message}</span>
                 </div>
+                {onStop && (
+                  <button
+                    type="button"
+                    onClick={onStop}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+                  >
+                    <span className="h-3 w-3 rounded-sm bg-red-400" />
+                    Stop
+                  </button>
+                )}
               </div>
             )}
             

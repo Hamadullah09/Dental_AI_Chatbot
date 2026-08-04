@@ -38,28 +38,31 @@ function ChatContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const loadedSessionRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const editHistoryRef = useRef<Message[]>([]);
 
-  function exportChat() {
-    if (messages.length === 0) {
-      setToast("No messages to export.");
-      return;
+  function stopGeneration() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
-    const lines = messages.map((m) => {
-      const role = m.role === "user" ? "You" : "DentalGPT";
-      const time = m.created_at
-        ? new Date(m.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-        : "";
-      return `## ${role} - ${time}\n\n${m.role === "user" ? m.content : m.content}`;
-    });
-    const markdown = `# Dental Chat Export\n\n${lines.join("\n\n---\n\n")}`;
-    const blob = new Blob([markdown], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${config.export_filename_prefix || "dental-chat"}-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setToast("Chat exported as Markdown.");
+  }
+
+  function handleEditMessage(messageId: string, content: string) {
+    const msgIndex = messages.findIndex((m) => m.id === messageId);
+    if (msgIndex === -1) return;
+    const msg = messages[msgIndex];
+    addToEditHistory(msg);
+    setQuestion(content);
+    setMessages((current) => current.slice(0, msgIndex));
+    if (sessionId) {
+      setSessionId(null);
+      loadedSessionRef.current = null;
+    }
+  }
+
+  function addToEditHistory(msg: Message) {
+    editHistoryRef.current = [...editHistoryRef.current, msg];
   }
 
   // Scroll to bottom on new messages
@@ -149,6 +152,10 @@ function ChatContent() {
       setToast("");
       setIsLoading(true);
 
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
+      const abortSignal = abortControllerRef.current.signal;
+
       const thinkingMessages = ["Searching knowledge base...", "Analyzing your question...", "Finding relevant information..."];
       let thinkingIdx = 0;
       setThinkingMessage(thinkingMessages[0]);
@@ -177,12 +184,16 @@ function ChatContent() {
           session_id: sessionId,
           document_id: scopedDocument?.id || null,
           search_web: searchWeb,
-        }, token)) {
+        }, token, abortSignal)) {
           if (event.type === "start" && event.session_id) {
             finalSessionId = event.session_id;
           } else if (event.type === "intent") {
             // Intent detected - update thinking message
             setThinkingMessage(`Detected: ${event.intent.replace(/_/g, " ")}`);
+          } else if (event.type === "queued") {
+            // The AI model is at capacity (GPU concurrency limit) - tell the user
+            // explicitly instead of leaving them looking at a stalled spinner.
+            setThinkingMessage("Queued - the AI model is busy, hang tight...");
           } else if (event.type === "content" && event.text) {
             accumulatedAnswer += event.text;
             setMessages((current) =>
@@ -196,8 +207,14 @@ function ChatContent() {
             finalSources = event.sources || [];
             finalVisuals = event.visuals || [];
           } else if (event.type === "metadata") {
-            finalMode = event.answer_mode || "rag_grounded";
+            // Provisional - based on whether retrieval found chunks, before generation
+            // and citation verification run. metadata_extended below carries the
+            // authoritative value once it's known (see docs/GAP_AUDIT_PHASE0.md #18).
+            finalMode = event.answer_mode || finalMode;
           } else if (event.type === "metadata_extended") {
+            if (event.answer_mode) {
+              finalMode = event.answer_mode;
+            }
             setMessages((current) =>
               current.map((m) =>
                 m.id === assistantMessageId
@@ -231,14 +248,27 @@ function ChatContent() {
         setSessionId(finalSessionId);
         await refreshSessions();
       } catch (error) {
-        setMessages((current) => current.filter((m) => m.id !== assistantMessageId));
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setMessages((current) => current.filter((m) => m.id !== assistantMessageId));
+          setToast("Generation stopped.");
+          return;
+        }
         let errorMsg = "Chat request failed";
         if (error instanceof ApiError && error.status === 429) {
           errorMsg = config.rate_limit_message;
         } else if (error instanceof Error) {
           errorMsg = error.message;
         }
-        setError(errorMsg);
+        if (errorMsg.includes("does not support image input")) {
+          setToast("This model does not support image input. Please use text or PDF documents only.");
+        }
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === assistantMessageId
+              ? { ...m, content: `⚠️ **Error:** ${errorMsg}` }
+              : m
+          )
+        );
       } finally {
         clearInterval(thinkingInterval);
         setThinkingMessage("");
@@ -322,8 +352,8 @@ function ChatContent() {
         onQuickAction={handleQuickAction}
         onStatus={setToast}
         onRetryMessage={(retryQuestion) => submitPrompt(retryQuestion, null)}
-        onFollowUpClick={(question) => submitPrompt(question, null)}
-        onExportChat={messages.length > 0 ? exportChat : undefined}
+        onStop={isLoading ? stopGeneration : undefined}
+        onEditMessage={handleEditMessage}
         chatWindowRef={chatWindowRef}
         bottomRef={bottomRef}
       />
