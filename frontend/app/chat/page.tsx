@@ -352,14 +352,13 @@ function ChatContent() {
         onQuickAction={handleQuickAction}
         onStatus={setToast}
         onRetryMessage={(retryQuestion) => submitPrompt(retryQuestion, null)}
-        onStop={isLoading ? stopGeneration : undefined}
         onEditMessage={handleEditMessage}
         chatWindowRef={chatWindowRef}
         bottomRef={bottomRef}
       />
 
       {/* Input composition area */}
-      <ChatInput 
+      <ChatInput
         value={question}
         onChange={setQuestion}
         onSubmit={onSubmit}
@@ -376,6 +375,7 @@ function ChatContent() {
         onToggleVoice={toggleVoiceInput}
         searchWeb={searchWeb}
         onToggleSearchWeb={() => setSearchWeb((current) => !current)}
+        onStop={isLoading ? stopGeneration : undefined}
       />
 
       {isListening && (

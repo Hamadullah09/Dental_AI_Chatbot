@@ -12,7 +12,6 @@ interface ChatWindowProps {
   onQuickAction: (actionText: string) => void;
   onStatus: (status: string) => void;
   onRetryMessage: (question: string) => void;
-  onStop?: () => void;
   onEditMessage?: (messageId: string, content: string) => void;
   chatWindowRef: React.RefObject<HTMLDivElement>;
   bottomRef: React.RefObject<HTMLDivElement>;
@@ -25,7 +24,6 @@ export function ChatWindow({
   onStatus,
   onQuickAction,
   onRetryMessage,
-  onStop,
   onEditMessage,
   chatWindowRef,
   bottomRef,
@@ -89,9 +87,9 @@ export function ChatWindow({
               )
             ))}
 
-            {/* Typing Indicator + Stop Button */}
+            {/* Typing Indicator */}
             {isLoading && (
-              <div id="typingIndicator" className="flex w-full items-center gap-3 px-1 py-5 fade-in">
+              <div id="typingIndicator" className="flex w-full justify-start px-1 py-5 fade-in">
                 <div className="flex items-center gap-3 rounded-2xl border border-dental-border bg-dental-card px-4 py-3 shadow-sm">
                   <div className="flex gap-1">
                     <div className="typing-dot h-2 w-2 rounded-full bg-dental-accent"></div>
@@ -100,16 +98,6 @@ export function ChatWindow({
                   </div>
                   <span className="text-xs text-dental-textSecondary">{thinkingMessage || config.typing_message}</span>
                 </div>
-                {onStop && (
-                  <button
-                    type="button"
-                    onClick={onStop}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
-                  >
-                    <span className="h-3 w-3 rounded-sm bg-red-400" />
-                    Stop
-                  </button>
-                )}
               </div>
             )}
             

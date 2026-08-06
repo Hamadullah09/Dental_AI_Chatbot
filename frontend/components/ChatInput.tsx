@@ -20,6 +20,7 @@ interface ChatInputProps {
   onToggleVoice: () => void;
   searchWeb: boolean;
   onToggleSearchWeb: () => void;
+  onStop?: () => void;
 }
 
 export function ChatInput({
@@ -37,6 +38,7 @@ export function ChatInput({
   onToggleVoice,
   searchWeb,
   onToggleSearchWeb,
+  onStop,
 }: ChatInputProps) {
   const config = useChatbotConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -178,15 +180,27 @@ export function ChatInput({
                 </button>
               </div>
 
-              {/* Send Button */}
-              <button
-                type="submit"
-                disabled={isLoading || (!value.trim() && !attachment)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-dental-textPrimary text-dental-darkBg transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
-                title="Send message"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
+              {/* Send / Stop Button */}
+              {isLoading ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  disabled={!onStop}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-dental-textPrimary text-dental-darkBg transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+                  title="Stop generating"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!value.trim() && !attachment}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-dental-textPrimary text-dental-darkBg transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+                  title="Send message"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>
