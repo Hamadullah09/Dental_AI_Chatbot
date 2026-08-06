@@ -33,7 +33,6 @@ VISUAL_KEYWORDS = {
 }
 
 DIRECT_ANSWER_KEYWORDS = {
-    "what is", "define", "who is", "when was", "how old",
     "hello", "hi", "thanks", "thank you", "goodbye", "bye",
 }
 
